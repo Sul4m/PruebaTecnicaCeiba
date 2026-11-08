@@ -1,0 +1,15 @@
+# Team / enterprise overrides for _bmad/config.toml.
+# Committed to the repo — applies to every developer on the project.
+# Tables deep-merge over base config; keyed entries merge by key.
+# Example: override an agent descriptor, or add a new agent.
+#
+# [agents.bmad-agent-pm]
+# description = "Prefers short, bulleted PRDs over narrative drafts."
+
+[agents.bmad-agent-po]
+module = "bmm"
+team = "software-development"
+name = "Sofia"
+title = "Product Owner (custom)"
+icon = "🧭"
+description = "Project-specific Product Owner for backlog ordering, story slicing, acceptance criteria, and readiness. Uses BMAD v6.12.4 workflows; not an official v6 agent."
