@@ -26,7 +26,8 @@ resource "azurerm_cognitive_deployment" "chat" {
   }
 
   sku {
-    name     = "GlobalStandard"
+    # Las suscripciones nuevas solo tienen cuota de gpt-5.4-mini en DataZoneStandard (datos en EE. UU.).
+    name     = "DataZoneStandard"
     capacity = var.openai_chat_capacity
   }
 }
