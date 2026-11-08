@@ -26,8 +26,6 @@ Variables que `docker-compose.yml` exige (sin ellas `compose` falla con un mensa
 | `TRIAGE_API_KEY` | API key de Triage (cabecera `X-API-Key`) |
 | `ASISTENTE_API_KEY` | API key propia del Asistente; sin ella el servicio no arranca |
 
-> **TODO (visible):** `ASISTENTE_API_KEY` es obligatoria en `docker-compose.yml` pero aún puede faltar en `.env.example`; hasta que se agregue, añadirla manualmente a `.env`.
-
 Se levantan: PostgreSQL 16, Kafka 3.9 (KRaft), Redis 7.4, Triage (`:8080`) y Asistente (`:8081`). Kafka queda accesible desde el host solo en `127.0.0.1:9094`.
 
 **Proveedor LLM en local.** Sin perfil explícito el Asistente usa el perfil `dev`: dobles locales de embeddings y chat, sin credenciales ni llamadas a Azure. Sirven para ejecutar las tres consultas del baseline y las pruebas, **no** son el modelo real. El perfil `azure` (`SPRING_PROFILES_ACTIVE=azure`) usa Azure OpenAI y requiere `AZURE_OPENAI_ENDPOINT` (autenticación por Entra ID/Workload Identity en AKS; `AZURE_OPENAI_API_KEY` solo si se usa clave) y, opcionalmente, `AZURE_OPENAI_CHAT_DEPLOYMENT` (defecto `gpt-5.4-mini`) y `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (defecto `text-embedding-3-small`). El Compose actual no las pasa al contenedor; el perfil `azure` se activa en el despliegue en AKS.
@@ -110,8 +108,15 @@ La entrega es al menos una vez (el cliente deduplica por `alertId`). SSE no cubr
 - **Fallo del LLM:** HTTP 503 (ProblemDetail) sin detalle del proveedor; `estado-urgencias` no se ve afectado.
 - **Proyección Redis:** Redis de un solo nodo; reconstruible por replay dentro de la retención del topic.
 - **Una sola réplica del relay del outbox** (`replicas: 1` hasta agregar bloqueo en BD).
-- **Métricas:** Micrometer registra conteos por nivel, escalamientos y latencia del LLM, pero Actuator expone por HTTP solo `health` y `metrics` en Triage y solo `health` en el Asistente.
+- **Métricas:** ambos servicios exponen `health` y `metrics` por Actuator; `/actuator/metrics` exige `X-API-Key` y las sondas de salud son públicas.
 - Edad/nombre de los casos E1-E6: valores válidos arbitrarios al construir requests.
+
+## Limitaciones conocidas
+
+- **Relay del outbox de una sola réplica:** `OutboxRelay` no usa bloqueo entre réplicas; Kubernetes despliega Triage con `replicas: 1` y estrategia `Recreate`.
+- **Auditoría inmutable por ausencia de endpoints:** no existen endpoints de modificación ni borrado, pero la base de datos no impone inmutabilidad (no hay trigger).
+- **Correlación de procesos de fondo de Triage:** el scheduler de escalamiento y el relay del outbox registran logs sin `traceId` (no nacen de una petición HTTP).
+- **Umbral RAG por calibrar:** `ASISTENTE_RAG_THRESHOLD` (0.45 en Azure) es provisional; el Asistente registra a nivel INFO los ids y scores recuperados para calibrarlo con el modelo real.
 
 ## Pruebas
 
