@@ -7,7 +7,7 @@ Backend reactivo para el triaje de urgencias de VidaCruz: dos microservicios Jav
 ## Estado
 
 - Local: Triage (registro, estados, SLA/escalamiento, auditoría, reporte, alertas SSE) y Asistente (RAG, abstención, resiliencia LLM, estado de urgencias) implementados; ejecución integrada con Docker Compose.
-- Azure (AKS, Terraform, CI/CD, Key Vault): **código de la Story 1.6 listo, no desplegado** ([guía](docs/despliegue-azure.md)); pendiente de despliegue (Stories 1.6, 3.4 y parte Azure de 4.4). Ver [URLs de Azure](#urls-de-azure).
+- Azure (AKS, Terraform, CI/CD, Key Vault, Event Hubs, PostgreSQL, Redis, Azure OpenAI): **Triage y Asistente desplegados y verificados** ([guía](docs/despliegue-azure.md)). Ver [URLs de Azure](#urls-de-azure).
 
 ## Ejecución local (un solo comando)
 
@@ -30,7 +30,7 @@ Variables que `docker-compose.yml` exige (sin ellas `compose` falla con un mensa
 
 Se levantan: PostgreSQL 16, Kafka 3.9 (KRaft), Redis 7.4, Triage (`:8080`) y Asistente (`:8081`). Kafka queda accesible desde el host solo en `127.0.0.1:9094`.
 
-**Proveedor LLM en local.** Sin perfil explícito el Asistente usa el perfil `dev`: dobles locales de embeddings y chat, sin credenciales ni llamadas a Azure. Sirven para ejecutar las tres consultas del baseline y las pruebas, **no** son el modelo real. El perfil `azure` (`SPRING_PROFILES_ACTIVE=azure`) usa Azure OpenAI y requiere `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` y, opcionalmente, `AZURE_OPENAI_CHAT_DEPLOYMENT` (defecto `gpt-5.4-mini`) y `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (defecto `text-embedding-3-small`). El Compose actual no las pasa al contenedor; el perfil `azure` se activa en el despliegue en AKS.
+**Proveedor LLM en local.** Sin perfil explícito el Asistente usa el perfil `dev`: dobles locales de embeddings y chat, sin credenciales ni llamadas a Azure. Sirven para ejecutar las tres consultas del baseline y las pruebas, **no** son el modelo real. El perfil `azure` (`SPRING_PROFILES_ACTIVE=azure`) usa Azure OpenAI y requiere `AZURE_OPENAI_ENDPOINT` (autenticación por Entra ID/Workload Identity en AKS; `AZURE_OPENAI_API_KEY` solo si se usa clave) y, opcionalmente, `AZURE_OPENAI_CHAT_DEPLOYMENT` (defecto `gpt-5.4-mini`) y `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (defecto `text-embedding-3-small`). El Compose actual no las pasa al contenedor; el perfil `azure` se activa en el despliegue en AKS.
 
 Salud: `GET /actuator/health/readiness` (sin API key) en `:8080` y `:8081`. La readiness de Triage incluye PostgreSQL; la del Asistente incluye Kafka y Redis, nunca el proveedor LLM.
 
@@ -56,7 +56,7 @@ flowchart LR
 
 ## Tecnologías
 
-Java 17, Spring Boot 3.5, Spring WebFlux/Reactor, Spring Security (API key), R2DBC + PostgreSQL 16 con Flyway, Spring Kafka (Apache Kafka 3.9), Redis 7.4 reactivo (script Lua), Spring AI (Azure OpenAI) con `SimpleVectorStore`, Resilience4j, Micrometer, logs estructurados ECS, Gradle (uno por servicio), JUnit 5 + Testcontainers, Docker/Compose. Pendiente: AKS, Terraform, GitHub Actions, Key Vault.
+Java 17, Spring Boot 3.5, Spring WebFlux/Reactor, Spring Security (API key), R2DBC + PostgreSQL 16 con Flyway, Spring Kafka (Apache Kafka 3.9), Redis 7.4 reactivo (script Lua), Spring AI (Azure OpenAI) con `SimpleVectorStore`, Resilience4j, Micrometer, logs estructurados ECS, Gradle (uno por servicio), JUnit 5 + Testcontainers, Docker/Compose. Azure: AKS, Terraform, GitHub Actions (OIDC), Key Vault, Event Hubs, Managed Redis.
 
 ## Decisiones
 
@@ -192,12 +192,33 @@ Sin `X-API-Key` o con una clave incorrecta ambos servicios responden 401 con cue
 
 ## URLs de Azure
 
-| Servicio | URL |
-|---|---|
-| Triage | _pendiente de despliegue_ |
-| Asistente Clínico | _pendiente de despliegue_ |
+Un solo host HTTPS (certificado Let's Encrypt) enruta por prefijo hacia cada servicio. Región `eastus2`.
 
-Se completarán tras desplegar en AKS y verificar las tres consultas del baseline y el flujo registro → conteo → escalamiento → alerta SSE → alta. Los manifests Kubernetes, Terraform y el pipeline aún no existen en el repositorio.
+| Servicio | URL base |
+|---|---|
+| Triage | `https://ptc-a01-api.eastus2.cloudapp.azure.com/triage` |
+| Asistente Clínico | `https://ptc-a01-api.eastus2.cloudapp.azure.com/asistente` |
+
+Las API keys están en Key Vault (`kv-ptc-a01`: `triage-api-key`, `asistente-api-key`); no se publican. Las URLs existen mientras el entorno esté desplegado: se elimina al terminar con `scripts/destroy-azure.sh`.
+
+Verificado en Azure el 2026-11-08:
+
+- Sin `X-API-Key`: 401. Registro de paciente: 201 con nivel y estado; SSE de alertas con heartbeat de 15 s.
+- Las tres consultas del baseline contra `gpt-5.4-mini` / `text-embedding-3-small` reales: crisis hipertensiva responde citando `PROTO-001`; sepsis (`PROTO-002`) y deshidratación pediátrica (`PROTO-003`) también; diabetes tipo 2 y dolor torácico se abstienen (no hay protocolo en el corpus).
+- Flujo integrado: registrar un paciente suma 1 al total de `/asistente/estado-urgencias` en menos de 4 s (Triage → Event Hubs → Asistente → Redis) y el alta lo resta.
+
+Demo reproducible:
+
+```bash
+H=https://ptc-a01-api.eastus2.cloudapp.azure.com
+TK=$(az keyvault secret show --vault-name kv-ptc-a01 --name triage-api-key --query value -o tsv)
+AK=$(az keyvault secret show --vault-name kv-ptc-a01 --name asistente-api-key --query value -o tsv)
+curl -s -X POST $H/asistente/consulta -H "X-API-Key: $AK" -H 'Content-Type: application/json' \
+  -d '{"pregunta":"¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"}'
+curl -s $H/asistente/estado-urgencias -H "X-API-Key: $AK"
+curl -s -X POST $H/triage/pacientes -H "X-API-Key: $TK" -H 'Content-Type: application/json' \
+  -d '{"nombreCompleto":"Ana Perez","edad":54,"quejaPrincipal":"Dolor torácico","signosVitales":{"frecuenciaCardiaca":130,"presionSistolica":180,"presionDiastolica":110,"spo2":97,"temperatura":36.8,"dolor":8,"gcs":15}}'
+```
 
 ## Estructura
 

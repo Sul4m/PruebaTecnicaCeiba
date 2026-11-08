@@ -97,7 +97,7 @@ Inevitable / honesto: (1) el nombre del vault y los IDs de identidades están en
 
 ## Costos estimados (ESTIMACIONES, región y precios varían; verificar en la calculadora de Azure)
 
-Orden de magnitud, 24x7, en USD/mes: AKS Free sin cargo de plano de control + 1 VM B2ms (~60), PostgreSQL B1ms + 32 GB (~15-25), Event Hubs Standard 1 TU (~22), ACR Basic (~5), Key Vault y DNS privado (<2), IP pública y balanceador Standard (~20). Total aproximado **120-140 USD/mes (~4-5 USD/día)**. Se elimina al terminar con `scripts/destroy-azure.sh`.
+Diseño original (1 nodo B2ms, PostgreSQL Burstable; **ya no aplica**, ver "Costos estimados adicionales" más abajo), 24x7, en USD/mes: AKS Free sin cargo de plano de control + 1 VM B2ms (~60), PostgreSQL B1ms + 32 GB (~15-25), Event Hubs Standard 1 TU (~22), ACR Basic (~5), Key Vault y DNS privado (<2), IP pública y balanceador Standard (~20). Total aproximado **120-140 USD/mes (~4-5 USD/día)**. Se elimina al terminar con `scripts/destroy-azure.sh`.
 
 ## Limpieza
 
