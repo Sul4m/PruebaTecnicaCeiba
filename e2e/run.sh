@@ -22,7 +22,7 @@ while [[ $# -gt 0 ]]; do
   esac; shift
 done
 
-for bin in docker curl jq python3; do command -v "$bin" >/dev/null || { echo "falta $bin" >&2; exit 2; }; done
+for bin in docker curl jq; do command -v "$bin" >/dev/null || { echo "falta $bin" >&2; exit 2; }; done
 mkdir -p "$GEN"
 WORK="$(mktemp -d "$GEN/work.XXXXXX")"; export WORK
 
@@ -125,7 +125,7 @@ run_scenario S18 "SSE: 401 y Last-Event-ID invalido"               sc_sse_errors
 MBT_RC=0
 if [[ $SKIP_MBT -eq 0 && -z "$ONLY" ]]; then
   echo "== MBT: modelo de estados (e2e/model) =="
-  python3 -I "$E2E_DIR/model/mbt.py" --triage "$TRIAGE_URL" --assistant "$ASSIST_URL" \
+  bash "$E2E_DIR/model/mbt.sh" --triage "$TRIAGE_URL" --assistant "$ASSIST_URL" \
     --triage-key "$TRIAGE_API_KEY" --assistant-key "$ASISTENTE_API_KEY" --sla-seconds 60 \
     --model "$E2E_DIR/model/patient_model.json"
   MBT_RC=$?

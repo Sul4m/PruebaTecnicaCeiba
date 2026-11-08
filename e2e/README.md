@@ -1,6 +1,6 @@
 # Puerta E2E (curl + BDD + MBT)
 
-Pruebas de extremo a extremo "como con Postman" contra `docker compose up` real, con `bash + curl + jq` y `python3`
+Pruebas de extremo a extremo "como con Postman" contra `docker compose up` real, con `bash + curl + jq` 
 (sin instalar nada global).
 
 ```bash
@@ -11,7 +11,7 @@ e2e/run.sh --only "S01 S02"  # solo esos escenarios BDD
 e2e/run.sh --skip-mbt --skip-llm-down --no-build
 ```
 
-Requisitos: Docker (puertos 8080 y 8081 libres), `curl`, `jq`, `python3`. Primera corrida: construye las imagenes
+Requisitos: Docker (puertos 8080 y 8081 libres), `curl`, `jq`. Primera corrida: construye las imagenes
 (varios minutos). Duracion tipica posterior: ~6-8 min (el SLA minimo es 1 min y hay esperas reales).
 
 ## Que hace
@@ -22,7 +22,7 @@ Requisitos: Docker (puertos 8080 y 8081 libres), `curl`, `jq`, `python3`. Primer
   escalamiento cada 2 s. Por eso en este entorno `slaMinutos` de CRITICO es 1 y no 5.
 - `features/*.feature`: escenarios BDD en Gherkin (espanol). Cada `@Sxx` esta implementado en `scenarios.sh` y
   `run.sh` verifica que tags y funciones coincidan.
-- `model/patient_model.json` + `model/mbt.py`: modelo de estados `(estado, escalado)` con transiciones validas,
+- `model/patient_model.json` + `model/mbt.sh`: modelo de estados `(estado, escalado)` con transiciones validas,
   invalidas (409/400) y de tiempo (SLA). El generador crea un caso por transicion (camino minimo + transicion = 100 %
   de cobertura de transiciones), lo ejecuta con curl en paralelo y comprueba en cada paso el oraculo (HTTP, `estado`,
   `flags.escalado`, alertas) y al final el conteo del Asistente (via Kafka).

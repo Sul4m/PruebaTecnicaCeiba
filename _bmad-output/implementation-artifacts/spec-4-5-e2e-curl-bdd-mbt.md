@@ -13,7 +13,7 @@ context:
 
 **Problem:** Los tests Gradle (Testcontainers/mocks) no prueban el stack tal como lo ejecuta un evaluador. Falta una puerta E2E sobre `docker compose up` real, equivalente a una coleccion Postman, antes de pasar a Azure.
 
-**Approach:** `e2e/run.sh` (bash + curl + jq) levanta el compose con un env-file sintetico y un override de SLA corto, ejecuta escenarios BDD en Gherkin (`e2e/features/*.feature`, ids `@S01..@S24`) y un MBT en Python (`e2e/model/`) que cubre todas las transiciones de un modelo `(estado, escalado)`; reinicia el Asistente con un proveedor LLM inalcanzable para validar el 503. Sale con codigo != 0 si algo falla y baja el stack.
+**Approach:** `e2e/run.sh` (bash + curl + jq) levanta el compose con un env-file sintetico y un override de SLA corto, ejecuta escenarios BDD en Gherkin (`e2e/features/*.feature`, ids `@S01..@S24`) y un MBT en bash (`e2e/model/`) que cubre todas las transiciones de un modelo `(estado, escalado)`; reinicia el Asistente con un proveedor LLM inalcanzable para validar el 503. Sale con codigo != 0 si algo falla y baja el stack.
 
 ## Boundaries & Constraints
 
@@ -30,7 +30,7 @@ context:
 
 - [x] `e2e/run.sh`, `lib/lib.sh`, `scenarios.sh`, `compose.e2e.yml`, `compose.llm-down.yml`
 - [x] `features/*.feature` (24 escenarios)
-- [x] `model/patient_model.json` + `model/mbt.py`
+- [x] `model/patient_model.json` + `model/mbt.sh`
 - [x] `e2e/README.md`
 - [x] Ejecucion contra compose real y registro de hallazgos
 
