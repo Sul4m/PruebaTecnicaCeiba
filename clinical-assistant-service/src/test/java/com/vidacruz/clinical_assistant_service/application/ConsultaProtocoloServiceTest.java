@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.vidacruz.clinical_assistant_service.application.port.out.AnswerGenerationPort;
 import com.vidacruz.clinical_assistant_service.application.port.out.ProtocolRetrievalPort;
@@ -48,14 +50,61 @@ class ConsultaProtocoloServiceTest {
         when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(
                 chunk("PROTO-001", "Medidas iniciales"), chunk("PROTO-001", "Medidas iniciales"),
                 chunk("PROTO-001", "Definición"))));
-        when(generation.generate(any(), any())).thenReturn(Mono.just("Segun PROTO-999 seccion inventada"));
+        when(generation.generate(any(), any())).thenReturn(Mono.just("Segun PROTO-001, medir la presion."));
 
         StepVerifier.create(service.consultar("q"))
                 .assertNext(r -> {
-                    assertThat(r.respuesta()).contains("PROTO-999");
+                    assertThat(r.respuesta()).contains("PROTO-001");
                     assertThat(r.fuentes()).containsExactly(
                             new FuenteProtocolo("PROTO-001", "Medidas iniciales"),
                             new FuenteProtocolo("PROTO-001", "Definición"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void answerWithoutProtocolMentionKeepsRetrievedSources() {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-002", "Acciones iniciales"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just("Administrar antibiotico en la primera hora."));
+
+        StepVerifier.create(service.consultar("q"))
+                .assertNext(r -> assertThat(r.fuentes()).containsExactly(
+                        new FuenteProtocolo("PROTO-002", "Acciones iniciales")))
+                .verifyComplete();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Segun PROTO-999 seccion inventada",
+            "Ver PROTO-001 y tambien PROTO-003.",
+            "segun proto-777",
+            "PROTO-0011 no existe",
+            "Segun PROTO 999",
+            "Segun PROTO_999",
+            "Segun PROTO\u2013999",
+            "Segun PROTO\u2011999"})
+    void answerCitingProtocolNotRetrievedIsDiscardedAndAbstains(String modelText) {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-001", "Medidas iniciales"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just(modelText));
+
+        StepVerifier.create(service.consultar("q"))
+                .assertNext(r -> {
+                    assertThat(r.respuesta()).isEqualTo(ConsultaResultado.AVISO_SIN_PROTOCOLO);
+                    assertThat(r.fuentes()).isEmpty();
+                })
+                .verifyComplete();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Segun PROTO-1, medir.", "Segun proto-001, medir.", "Segun PROTO 001, medir."})
+    void equivalentWritingsOfRetrievedProtocolAreKept(String modelText) {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-001", "Medidas iniciales"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just(modelText));
+
+        StepVerifier.create(service.consultar("q"))
+                .assertNext(r -> {
+                    assertThat(r.respuesta()).isEqualTo(modelText);
+                    assertThat(r.fuentes()).containsExactly(new FuenteProtocolo("PROTO-001", "Medidas iniciales"));
                 })
                 .verifyComplete();
     }

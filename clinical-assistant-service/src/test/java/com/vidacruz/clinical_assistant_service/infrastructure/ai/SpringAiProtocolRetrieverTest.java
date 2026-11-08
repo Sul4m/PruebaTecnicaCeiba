@@ -73,6 +73,28 @@ class SpringAiProtocolRetrieverTest {
     }
 
     @Test
+    void thresholdBoundaryIsInclusive() {
+        var open = retriever(SimpleVectorStore.builder(new DevEmbeddingModel()).build(), props(0.0, 2, 10));
+        double top = open.retrieve(Q1).block().get(0).score();
+
+        var atScore = retriever(SimpleVectorStore.builder(new DevEmbeddingModel()).build(), props(top, 2, 10));
+        var above = retriever(SimpleVectorStore.builder(new DevEmbeddingModel()).build(),
+                props(Math.nextUp(top), 2, 10));
+        assertThat(atScore.retrieve(Q1).block()).isNotEmpty();
+        assertThat(above.retrieve(Q1).block()).isEmpty();
+    }
+
+    @Test
+    void configuredThresholdSeparatesCoveredFromUncoveredBaselineQuestions() {
+        var r = retriever(SimpleVectorStore.builder(new DevEmbeddingModel()).build(), props(0.0, 2, 10));
+        double q1 = r.retrieve(Q1).block().get(0).score();
+        double q2 = r.retrieve(Q2).block().get(0).score();
+        double q3 = r.retrieve(Q3).block().stream().mapToDouble(RetrievedChunk::score).max().orElse(0.0);
+        assertThat(q3).isLessThan(0.30).isLessThan(Math.min(q1, q2));
+        assertThat(Math.min(q1, q2)).isGreaterThanOrEqualTo(0.30);
+    }
+
+    @Test
     void embeddingRunsOnDedicatedSchedulerNotCallerThread() {
         List<String> threads = new CopyOnWriteArrayList<>();
         var model = new DevEmbeddingModel() {
