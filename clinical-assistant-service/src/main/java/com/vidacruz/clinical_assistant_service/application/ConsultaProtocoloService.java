@@ -44,10 +44,23 @@ public class ConsultaProtocoloService {
             Set<String> recuperados = new LinkedHashSet<>();
             fuentes.forEach(f -> recuperados.add(f.protocolo()));
             return generation.generate(pregunta, context)
-                    .map(respuesta -> citaSoloRecuperados(respuesta, recuperados)
-                            ? new ConsultaResultado(respuesta, fuentes)
-                            : ConsultaResultado.sinProtocolo());
+                    .map(respuesta -> esSinProtocolo(respuesta) || !citaSoloRecuperados(respuesta, recuperados)
+                            ? ConsultaResultado.sinProtocolo()
+                            : new ConsultaResultado(respuesta, fuentes))
+                    .defaultIfEmpty(ConsultaResultado.sinProtocolo());
         });
+    }
+
+    /**
+     * RN-05: el modelo emite {@link ConsultaResultado#TOKEN_SIN_PROTOCOLO} cuando los fragmentos no responden
+     * directamente. Comparacion tolerante a espacios, mayusculas y puntuacion final; vacio tambien abstiene.
+     */
+    static boolean esSinProtocolo(String respuesta) {
+        if (respuesta == null) {
+            return true;
+        }
+        String normalizada = respuesta.strip().replaceAll("^[\\p{Punct}\\s]+|[\\p{Punct}\\s]+$", "");
+        return normalizada.isEmpty() || normalizada.equalsIgnoreCase(ConsultaResultado.TOKEN_SIN_PROTOCOLO);
     }
 
     /**

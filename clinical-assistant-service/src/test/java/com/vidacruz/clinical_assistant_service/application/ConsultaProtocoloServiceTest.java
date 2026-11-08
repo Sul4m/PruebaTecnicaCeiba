@@ -108,4 +108,38 @@ class ConsultaProtocoloServiceTest {
                 })
                 .verifyComplete();
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"SIN_PROTOCOLO", "  SIN_PROTOCOLO  ", "SIN_PROTOCOLO.", "sin_protocolo", "\nSIN_PROTOCOLO\n", "", "   "})
+    void modelTokenOrEmptyOutputAbstainsWithExactNoticeAndNoSources(String modelText) {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-003", "Rehidratacion"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just(modelText));
+
+        StepVerifier.create(service.consultar("diarrea en adultos"))
+                .assertNext(r -> {
+                    assertThat(r.respuesta()).isEqualTo(ConsultaResultado.AVISO_SIN_PROTOCOLO);
+                    assertThat(r.fuentes()).isEmpty();
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void emptyGenerationAbstains() {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-003", "Rehidratacion"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.empty());
+
+        StepVerifier.create(service.consultar("q"))
+                .assertNext(r -> assertThat(r.fuentes()).isEmpty())
+                .verifyComplete();
+    }
+
+    @Test
+    void answerMerelyMentioningTokenInsideTextIsNotAbstention() {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-001", "Medidas iniciales"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just("Medir la presion; no es un caso SIN_PROTOCOLO."));
+
+        StepVerifier.create(service.consultar("q"))
+                .assertNext(r -> assertThat(r.fuentes()).hasSize(1))
+                .verifyComplete();
+    }
 }
