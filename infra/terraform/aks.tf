@@ -54,9 +54,9 @@ resource "azurerm_role_assignment" "kubelet_acr_pull" {
   principal_id         = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
 }
 
-# Quien aplica Terraform administra el clúster (crear namespace, instalar cert-manager).
+# El administrador humano administra el clúster (crear namespace, instalar cert-manager).
 resource "azurerm_role_assignment" "deployer_aks_admin" {
   scope                = azurerm_kubernetes_cluster.main.id
   role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = var.admin_object_id
 }

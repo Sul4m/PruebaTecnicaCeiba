@@ -60,8 +60,13 @@ variable "github_repository" {
   default     = ""
 }
 
-variable "github_deploy_branches" {
-  description = "Ramas protegidas autorizadas a desplegar/aplicar (subject ref:refs/heads/<rama>)."
-  type        = list(string)
-  default     = ["master"]
+variable "admin_object_id" {
+  description = "Object ID de Entra ID del administrador humano (az ad signed-in-user show --query id). Recibe admin de AKS y Secrets Officer; es explícito para que un apply desde CI no reemplace esos roles."
+  type        = string
+}
+
+variable "tfstate_storage_account_id" {
+  description = "ID de la cuenta de almacenamiento del estado (salida de scripts/bootstrap-tfstate.sh). Vacío = no asignar roles de estado a las identidades de CI."
+  type        = string
+  default     = ""
 }

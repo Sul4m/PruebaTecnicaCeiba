@@ -3,7 +3,7 @@ name: triage
 # Valida, prueba, construye/publica en ACR (tag inmutable = SHA) y aplica los manifests.
 # Terraform NO corre aquí: ver infra.yml. Sin credenciales en el repo: OIDC hacia Azure.
 # Variables (Settings > Secrets and variables > Actions > Variables), ninguna es secreta:
-#   AZURE_CLIENT_ID (ci_deploy_client_id), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME,
+#   (job deploy usa environment `azure`) AZURE_CLIENT_ID (ci_deploy_client_id), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME,
 #   AKS_NAME, RESOURCE_GROUP, KV_NAME, TRIAGE_WORKLOAD_CLIENT_ID, DB_HOST, DB_USER,
 #   KAFKA_BOOTSTRAP_SERVERS, INGRESS_HOST   (salidas de `terraform output`)
 
@@ -94,15 +94,22 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Construir y publicar la imagen (tag = SHA)
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
         run: |
-          az acr login --name "${{ vars.ACR_NAME }}"
-          IMAGE="${{ vars.ACR_NAME }}.azurecr.io/triage-service:${IMAGE_TAG}"
+          IMAGE="${ACR_NAME}.azurecr.io/triage-service:${IMAGE_TAG}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          # Re-ejecución: si el tag (inmutable) ya existe se omite build+push y se sigue al deploy.
+          if az acr repository show --name "$ACR_NAME" --image "triage-service:${IMAGE_TAG}" --output none 2>/dev/null; then
+            echo "El tag ${IMAGE_TAG} ya existe en ACR; se omite build y push."
+            exit 0
+          fi
+          az acr login --name "$ACR_NAME"
           docker build -t "$IMAGE" triage-service
           docker push "$IMAGE"
           # Hace el tag de solo lectura: no puede sobrescribirse (inmutable).
-          az acr repository update --name "${{ vars.ACR_NAME }}" \
+          az acr repository update --name "$ACR_NAME" \
             --image "triage-service:${IMAGE_TAG}" --write-enabled false
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
       - uses: azure/setup-kubectl@v4
       - uses: azure/use-kubelogin@v1

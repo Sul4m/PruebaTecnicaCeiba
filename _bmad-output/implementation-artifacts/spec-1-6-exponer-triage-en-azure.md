@@ -26,3 +26,14 @@ Triage accesible por HTTPS en AKS, con infraestructura en Terraform, manifests v
 ## Pendiente para `done`
 
 Aplicar Terraform, ejecutar `bootstrap-secrets.sh`, desplegar, y verificar con curl: POST /triage/pacientes por HTTPS con API key, evento en Event Hubs, SSE sin cortes, Flyway con TLS, productor idempotente contra Event Hubs.
+
+## Review Triage Log
+
+Ronda 1 (parches aplicados, aun sin validar contra Azure real; solo `terraform fmt/validate`):
+- P1: identidad de plan en PR solo lectura (`id-gh-tf-plan`), separada de la de apply (`id-gh-tf-apply`, solo `environment:azure-infra`); RBAC Administrator con condicion ABAC sobre roles asignables.
+- P2: federated credentials por `environment:azure` (deploy) y `environment:azure-infra` (apply); `pull_request` solo para plan. Los workflows usan esos environments.
+- P3: Storage Blob Data Contributor (apply) / Reader (plan) sobre la cuenta del estado, mas Reader para refrescar asignaciones.
+- P4: `admin_object_id` explicito en lugar del caller actual.
+- P5: `triage.yml` omite build+push si el tag SHA ya existe en ACR. P6: `EXPECTED_SUBSCRIPTION_ID` obligatorio en el script de destruccion. P7: `vars.*` pasados por `env:` en los `run:`.
+
+Diferido (ver `deferred-work.md`): SAS de namespace -> roles Data Sender/Receiver con Workload Identity; usuario de BD de minimo privilegio y `sslmode=verify-full`; checksum de kubeconform.

@@ -61,6 +61,10 @@ output "ci_deploy_client_id" {
   value = try(azurerm_user_assigned_identity.ci_deploy[0].client_id, null)
 }
 
-output "ci_terraform_client_id" {
-  value = try(azurerm_user_assigned_identity.ci_terraform[0].client_id, null)
+output "ci_terraform_apply_client_id" {
+  value = try(azurerm_user_assigned_identity.ci_terraform_apply[0].client_id, null)
+}
+
+output "ci_terraform_plan_client_id" {
+  value = try(azurerm_user_assigned_identity.ci_terraform_plan[0].client_id, null)
 }

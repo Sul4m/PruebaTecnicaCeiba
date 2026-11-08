@@ -43,7 +43,23 @@ export INGRESS_DNS_LABEL=$(terraform -chdir=infra/terraform output -raw ingress_
 scripts/render-k8s.sh /tmp/platform k8s/platform && kubectl apply -f /tmp/platform
 ```
 
-6. **CI**: en GitHub, crear el environment `azure` (y `azure-infra`, con aprobación) y las variables de Actions listadas en las cabeceras de `.github/workflows/triage.yml` e `infra.yml` (todas salen de `terraform output`; ninguna es secreta). Un push a `master` que toque `triage-service/` o `k8s/` construye, publica `triage-service:<SHA>` en ACR y aplica. Para el primer despliegue sin esperar al CI, ejecutar los mismos pasos a mano (`az acr build`/`docker push`, `scripts/render-k8s.sh` y `kubectl apply`).
+6. **CI**: en `terraform.tfvars` poner `admin_object_id` (`az ad signed-in-user show --query id -o tsv`; el admin humano es explícito para que un apply desde CI no reemplace sus roles), `github_repository` y `tfstate_storage_account_id` (lo imprime `bootstrap-tfstate.sh`). En GitHub crear los environments y las variables de Actions (todas no secretas, salen de `terraform output`/de los scripts):
+
+   | Environment | Quién lo usa | Reglas recomendadas |
+   |---|---|---|
+   | `azure` | job `deploy` de `triage.yml` (subject `repo:<owner>/<repo>:environment:azure`) | solo rama `master` |
+   | `azure-infra` | job `apply` de `infra.yml` (subject `...:environment:azure-infra`) | solo `master` + revisor obligatorio |
+
+   | Variable | Valor |
+   |---|---|
+   | `AZURE_CLIENT_ID` | `ci_deploy_client_id` |
+   | `AZURE_TF_APPLY_CLIENT_ID` / `AZURE_TF_PLAN_CLIENT_ID` | `ci_terraform_apply_client_id` / `ci_terraform_plan_client_id` |
+   | `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `AZURE_LOCATION`, `SUFFIX` | los de `terraform.tfvars` / `terraform output` |
+   | `ADMIN_OBJECT_ID` | el mismo `admin_object_id` |
+   | `TFSTATE_RG`, `TFSTATE_STORAGE_ACCOUNT`, `TFSTATE_STORAGE_ACCOUNT_ID` | salida de `bootstrap-tfstate.sh` |
+   | `ACR_NAME`, `AKS_NAME`, `RESOURCE_GROUP`, `KV_NAME`, `TRIAGE_WORKLOAD_CLIENT_ID`, `DB_HOST`, `DB_USER`, `KAFKA_BOOTSTRAP_SERVERS`, `INGRESS_HOST` | `terraform output` |
+
+   **Flujo de identidades (mínimo privilegio):** (a) `id-gh-tf-plan` -> subject `pull_request`, **solo lectura** (Reader en el grupo y en la cuenta del estado + Storage Blob Data Reader; el plan corre con `-lock=false -refresh=false`, así que es menos exacto y no refresca secretos de Key Vault); (b) `id-gh-tf-apply` -> solo `environment:azure-infra`: Contributor y RBAC Administrator en el grupo **con condición ABAC** que limita los roles asignables a una lista cerrada (AcrPull/Push, KV Secrets Officer/User, roles RBAC de AKS; nunca Owner/Contributor/UAA), KV Secrets Officer y Storage Blob Data Contributor sobre el estado; (c) `id-gh-deploy` -> solo `environment:azure`: AcrPush y roles de AKS. Una PR (también de rama) nunca puede asumir (b) ni (c). Los roles sobre la cuenta del estado (otro grupo) los crea el primer apply manual. Un push a `master` que toque `triage-service/` o `k8s/` construye, publica `triage-service:<SHA>` en ACR y aplica. Para el primer despliegue sin esperar al CI, ejecutar los mismos pasos a mano (`az acr build`/`docker push`, `scripts/render-k8s.sh` y `kubectl apply`).
 7. **URL**: el host es `terraform output ingress_host` (`<label>.<location>.cloudapp.azure.com`); no requiere dominio propio. Let's Encrypt emite el certificado por HTTP-01 (puede tardar unos minutos: `kubectl -n triage get certificate`).
 
 ## Verificación

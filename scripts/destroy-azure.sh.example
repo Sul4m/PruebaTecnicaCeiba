@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Plantilla versionada. Copiar a scripts/destroy-azure.sh (IGNORADO por Git) y ejecutar:
 #   cp scripts/destroy-azure.sh.example scripts/destroy-azure.sh && chmod +x scripts/destroy-azure.sh
-#   scripts/destroy-azure.sh <suffix>
+#   EXPECTED_SUBSCRIPTION_ID=<id> scripts/destroy-azure.sh <suffix>   (la variable es obligatoria)
 # Elimina el grupo rg-pruebatecnicaceiba-<suffix> (y, aparte, el grupo del estado de Terraform) SOLO
 # si: la suscripción activa es la esperada, el nombre coincide, el grupo tiene el tag
 # project=PruebaTecnicaCeiba, y el usuario escribe el nombre exacto. No forma parte de CI/CD.
@@ -13,8 +13,11 @@ SUFFIX="${1:?uso: $0 <suffix>}"
 SUB_ID="$(az account show --query id -o tsv)"
 SUB_NAME="$(az account show --query name -o tsv)"
 echo "Suscripción activa: $SUB_NAME ($SUB_ID)"
-if [[ -n "${EXPECTED_SUBSCRIPTION_ID:-}" && "$SUB_ID" != "$EXPECTED_SUBSCRIPTION_ID" ]]; then
-  echo "La suscripción activa no coincide con EXPECTED_SUBSCRIPTION_ID. Abortando."; exit 1
+if [[ -z "${EXPECTED_SUBSCRIPTION_ID:-}" ]]; then
+  echo "EXPECTED_SUBSCRIPTION_ID es obligatorio (export EXPECTED_SUBSCRIPTION_ID=<id>). Abortando."; exit 1
+fi
+if [[ "$SUB_ID" != "$EXPECTED_SUBSCRIPTION_ID" ]]; then
+  echo "La suscripción activa ($SUB_ID) no coincide con EXPECTED_SUBSCRIPTION_ID. Abortando."; exit 1
 fi
 read -r -p "¿Es la suscripción correcta? (si/no): " OK
 [[ "$OK" == "si" ]] || { echo "Cancelado."; exit 1; }

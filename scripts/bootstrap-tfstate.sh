@@ -31,4 +31,6 @@ Complete infra/terraform/backend.hcl (ignorado por Git):
   container_name       = "tfstate"
   key                  = "pruebatecnicaceiba.tfstate"
   use_azuread_auth     = true
+Y en terraform.tfvars (roles del estado para las identidades de CI):
+  tfstate_storage_account_id = "$SCOPE"
 EOF

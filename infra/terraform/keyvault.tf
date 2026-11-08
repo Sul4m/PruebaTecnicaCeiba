@@ -11,11 +11,12 @@ resource "azurerm_key_vault" "main" {
   tags                       = local.tags
 }
 
-# Quien aplica Terraform escribe secretos (plano de datos).
+# El administrador humano escribe secretos (plano de datos). Explícito (admin_object_id) y no el
+# caller actual, para que un apply desde CI no reemplace la asignación.
 resource "azurerm_role_assignment" "deployer_kv_officer" {
   scope                = azurerm_key_vault.main.id
   role_definition_name = "Key Vault Secrets Officer"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = var.admin_object_id
 }
 
 # Contraseña de PostgreSQL: se genera de forma EFÍMERA (no llega al estado ni al plan) y se
@@ -33,7 +34,10 @@ resource "azurerm_key_vault_secret" "db_password" {
   content_type     = "text/plain"
   tags             = local.tags
 
-  depends_on = [azurerm_role_assignment.deployer_kv_officer]
+  depends_on = [
+    azurerm_role_assignment.deployer_kv_officer,
+    azurerm_role_assignment.ci_terraform_apply_kv_officer,
+  ]
 }
 
 # Los secretos `triage-api-key` y `eventhubs-connection-string` NO los gestiona Terraform:
