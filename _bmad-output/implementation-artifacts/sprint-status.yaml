@@ -44,8 +44,8 @@ development_status:
   1-6-exponer-triage-en-azure: backlog
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-consultar-el-reporte-de-operación-por-hora: backlog
+  epic-2: in-progress
+  2-1-consultar-el-reporte-de-operación-por-hora: review
   epic-2-retrospective: optional
 
   epic-3: backlog
@@ -55,8 +55,8 @@ development_status:
   3-4-exponer-el-asistente-clínico-en-azure: backlog
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-responder-consultas-citando-el-protocolo-del-corpus: backlog
+  epic-4: in-progress
+  4-1-responder-consultas-citando-el-protocolo-del-corpus: review
   4-2-abstenerse-cuando-no-existe-protocolo: backlog
   4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: backlog
   4-4-entregar-la-solución-integrada-y-documentada: backlog
