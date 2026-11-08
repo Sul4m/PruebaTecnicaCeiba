@@ -1,4 +1,3 @@
-# language: es
 # Fuente: docs/requirements/technical-test-baseline.md (RF-02, RF-05, RN-04) y ACs de las historias 1.3, 2.1, 3.x.
 Feature: Autenticación, estados y reportes
 

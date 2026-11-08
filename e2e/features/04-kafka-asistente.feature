@@ -1,4 +1,3 @@
-# language: es
 # Fuente: RF-04, RN-05, historias 3.3, 4.1-4.3. El proveedor LLM local es un doble de desarrollo (perfil dev).
 Feature: Eventos Kafka, estado de urgencias y Asistente Clínico (RAG)
 

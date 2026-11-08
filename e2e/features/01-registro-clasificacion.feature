@@ -1,4 +1,3 @@
-# language: es
 # Fuente: docs/requirements/technical-test-baseline.md (RF-01, RN-01, RN-02, E1-E6). Implementado en e2e/scenarios.sh.
 Feature: Registro y clasificación de pacientes (RF-01, RN-01, RN-02)
   Como personal de admisión

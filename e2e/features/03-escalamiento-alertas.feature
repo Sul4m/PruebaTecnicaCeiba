@@ -1,4 +1,3 @@
-# language: es
 # Fuente: RF-03, RF-06, RN-02, RN-03, RN-04. SLA de CRITICO = 1 min e intervalo 2 s por e2e/compose.e2e.yml.
 Feature: Escalamiento por SLA, alertas persistidas y SSE
 
