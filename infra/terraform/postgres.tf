@@ -3,6 +3,7 @@ resource "azurerm_postgresql_flexible_server" "main" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   version             = "16"
+  zone                = var.postgres_zone
   sku_name            = var.postgres_sku_name
   storage_mb          = 32768
   tags                = local.tags

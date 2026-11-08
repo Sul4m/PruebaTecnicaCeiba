@@ -21,13 +21,13 @@ variable "suffix" {
 variable "aks_node_vm_size" {
   description = "Tamaño del nodo único de AKS. Debe tener cuota en la suscripción/región."
   type        = string
-  default     = "Standard_B2ms"
+  default     = "Standard_D2s_v6"
 }
 
 variable "postgres_sku_name" {
   description = "SKU burstable mínimo de PostgreSQL Flexible Server."
   type        = string
-  default     = "B_Standard_B1ms"
+  default     = "GP_Standard_D2ds_v4"
 }
 
 variable "postgres_admin_login" {
@@ -69,4 +69,16 @@ variable "tfstate_storage_account_id" {
   description = "ID de la cuenta de almacenamiento del estado (salida de scripts/bootstrap-tfstate.sh). Vacío = no asignar roles de estado a las identidades de CI."
   type        = string
   default     = ""
+}
+
+variable "postgres_zone" {
+  description = "Zona de disponibilidad de PostgreSQL. En suscripciones nuevas de eastus2 la zona 1 no está disponible y los SKU Burstable no se aprueban."
+  type        = string
+  default     = "2"
+}
+
+variable "aks_node_count" {
+  description = "Nodos del pool del sistema. Con 2 vCPU por nodo, 1 solo no alcanza para add-ons + cert-manager + ingress + Triage; la 3.4 (Asistente) también necesita el segundo."
+  type        = number
+  default     = 2
 }

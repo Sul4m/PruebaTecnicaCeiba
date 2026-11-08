@@ -58,7 +58,8 @@ data "azurerm_role_definition" "assignable" {
 locals {
   # Condición ABAC: el RBAC Administrator solo puede crear/borrar asignaciones de estos roles
   # (nunca Owner, Contributor ni User Access Administrator).
-  assignable_role_ids = join(",", [for r in data.azurerm_role_definition.assignable : r.role_definition_id])
+  # La condición exige GUIDs de rol, no el id ARM completo (Azure la rechaza con 400 si no).
+  assignable_role_ids = join(",", [for r in data.azurerm_role_definition.assignable : element(split("/", r.role_definition_id), length(split("/", r.role_definition_id)) - 1)])
   rbac_admin_condition = join(" AND ", [
     "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${local.assignable_role_ids}}))",
     "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${local.assignable_role_ids}}))",
