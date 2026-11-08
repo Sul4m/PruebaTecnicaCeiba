@@ -41,7 +41,7 @@ development_status:
   1-3-cambiar-el-estado-con-transiciones-válidas: done
   1-4-publicar-eventos-de-triaje-de-forma-durable: done
   1-5-escalar-por-sla-una-sola-vez: done
-  1-6-exponer-triage-en-azure: review # código listo; NO validado contra Azure real (no pasa a done hasta desplegar)
+  1-6-exponer-triage-en-azure: done
   epic-1-retrospective: optional
 
   epic-2: done
