@@ -1,0 +1,25 @@
+# Perfil con proveedor real. Todas las credenciales provienen de variables de entorno.
+spring:
+  ai:
+    model:
+      chat: azure-openai
+      embedding: azure-openai
+    azure:
+      openai:
+        api-key: ${AZURE_OPENAI_API_KEY}
+        endpoint: ${AZURE_OPENAI_ENDPOINT}
+        chat:
+          options:
+            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT:gpt-5.4-mini}
+            # Modelos de razonamiento (gpt-5.x) usan max_completion_tokens, no max_tokens.
+            max-completion-tokens: ${assistant.rag.max-output-tokens}
+        embedding:
+          options:
+            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:text-embedding-3-small}
+
+assistant:
+  ai:
+    provider: azure
+  rag:
+    # Umbral a calibrar con text-embedding-3-small (ADR-0003).
+    similarity-threshold: ${ASISTENTE_RAG_THRESHOLD:0.45}
