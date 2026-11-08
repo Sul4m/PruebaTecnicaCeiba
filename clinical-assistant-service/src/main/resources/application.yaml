@@ -1,3 +1,39 @@
 spring:
   application:
     name: clinical-assistant-service
+  profiles:
+    # Sin perfil explicito se usa `dev` (dobles locales, sin credenciales). En despliegue activar `azure`.
+    default: dev
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+assistant:
+  security:
+    # Clave propia del Asistente (NO compartida con Triage). Solo por entorno; sin valor por defecto.
+    api-key: ${ASISTENTE_API_KEY:}
+  rag:
+    corpus-version: v1
+    corpus-location: classpath:corpus/{version}/*.md
+    top-k: 3
+    # Calibrado con las 3 consultas del baseline para el doble de desarrollo; recalibrar con text-embedding-3-small.
+    similarity-threshold: 0.30
+    max-output-tokens: 400
+    max-answer-chars: 2000
+    llm-timeout: 30s
+    embedding-timeout: 10s
+    scheduler:
+      threads: 4
+      queue-capacity: 100

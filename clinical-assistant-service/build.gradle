@@ -17,6 +17,17 @@ repositories {
 	mavenCentral()
 }
 
+ext {
+	// Spring AI 1.0.x (GA line compatible with Spring Boot 3.4/3.5). See ADR-0003.
+	springAiVersion = '1.0.9'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
@@ -24,8 +35,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	// Spring AI: Azure OpenAI chat/embeddings (activated only with the `azure` profile) + SimpleVectorStore.
+	implementation 'org.springframework.ai:spring-ai-starter-model-azure-openai'
+	implementation 'org.springframework.ai:spring-ai-vector-store'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'io.projectreactor:reactor-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
