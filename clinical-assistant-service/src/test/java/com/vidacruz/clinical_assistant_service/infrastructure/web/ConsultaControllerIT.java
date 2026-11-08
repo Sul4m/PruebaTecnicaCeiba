@@ -194,4 +194,9 @@ class ConsultaControllerIT {
     void otherActuatorEndpointsRequireApiKey() {
         client.get().uri("/actuator/metrics").exchange().expectStatus().isUnauthorized();
     }
+
+    @Test
+    void metricsEndpointIsExposedWithApiKey() {
+        client.get().uri("/actuator/metrics").header("X-API-Key", KEY).exchange().expectStatus().isOk();
+    }
 }
