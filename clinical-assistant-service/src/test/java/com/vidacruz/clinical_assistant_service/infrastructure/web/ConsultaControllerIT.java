@@ -44,7 +44,7 @@ class ConsultaControllerIT {
     @BeforeEach
     void stubModel() {
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
-                new ChatResponse(List.of(new Generation(new AssistantMessage("Respuesta simulada. Ver PROTO-999."))))));
+                new ChatResponse(List.of(new Generation(new AssistantMessage("Respuesta simulada."))))));
     }
 
     private WebTestClient.ResponseSpec post(String key, Object body) {
@@ -67,10 +67,42 @@ class ConsultaControllerIT {
         post(KEY, Map.of("pregunta", "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"))
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.respuesta").isEqualTo("Respuesta simulada. Ver PROTO-999.")
+                .jsonPath("$.respuesta").isEqualTo("Respuesta simulada.")
                 .jsonPath("$.fuentes[0].protocolo").isEqualTo("PROTO-001")
                 .jsonPath("$.fuentes[0].seccion").isEqualTo("Medidas iniciales")
                 .jsonPath("$.fuentes[?(@.protocolo=='PROTO-999')]").isEmpty();
+    }
+
+    @Test
+    void modelCitingNonexistentProtocolIsDiscardedAndAbstains() {
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                new ChatResponse(List.of(new Generation(new AssistantMessage("Segun PROTO-999, administrar X."))))));
+        post(KEY, Map.of("pregunta", "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"))
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.respuesta").isEqualTo(ConsultaResultado.AVISO_SIN_PROTOCOLO)
+                .jsonPath("$.fuentes").isEmpty();
+    }
+
+    @Test
+    void modelContentForUnrelatedQuestionIsNeverReturned() {
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                new ChatResponse(List.of(new Generation(new AssistantMessage("Metformina 850 mg cada 12 h."))))));
+        post(KEY, Map.of("pregunta", "¿Cuál es el tratamiento de primera línea para la diabetes tipo 2?"))
+                .expectStatus().isOk()
+                .expectBody(String.class).value(b -> assertThat(b).doesNotContain("Metformina"));
+        verify(chatModel, never()).stream(any(Prompt.class));
+    }
+
+    @Test
+    void partiallyRelatedQuestionCitesOnlyRetrievedProtocols() {
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                new ChatResponse(List.of(new Generation(new AssistantMessage("Segun PROTO-002, hacer algo."))))));
+        post(KEY, Map.of("pregunta", "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"))
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.respuesta").isEqualTo(ConsultaResultado.AVISO_SIN_PROTOCOLO)
+                .jsonPath("$.fuentes").isEmpty();
     }
 
     @Test
