@@ -17,13 +17,18 @@ import org.apache.kafka.clients.admin.NewTopic;
 @ConditionalOnProperty(prefix = "assistant.projection", name = "enabled", havingValue = "true", matchIfMissing = true)
 class KafkaProjectionConfig {
 
-    /** Mismos topics y particiones que Triage; la creacion es idempotente y evita carreras en el arranque. */
+    /**
+     * Mismos topics y particiones que Triage; la creacion es idempotente y evita carreras en el arranque.
+     * En Event Hubs (perfil azure) la API Kafka no crea topics: los crea Terraform y esto se desactiva.
+     */
     @Bean
+    @ConditionalOnProperty(prefix = "assistant.projection", name = "create-topics", havingValue = "true", matchIfMissing = true)
     NewTopic eventsTopic(ProjectionProperties props) {
         return TopicBuilder.name(props.topic()).partitions(3).replicas(1).build();
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "assistant.projection", name = "create-topics", havingValue = "true", matchIfMissing = true)
     NewTopic deadLetterTopic(ProjectionProperties props) {
         return TopicBuilder.name(props.dltTopic()).partitions(3).replicas(1).build();
     }

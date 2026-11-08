@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asistente
+  namespace: asistente
+  labels:
+    app: asistente
+spec:
+  # 1 réplica: el clúster es pequeño (2 nodos de 2 vCPU). La proyección es idempotente (replay desde
+  # Event Hubs), así que escalar no corrompería Redis, pero no hace falta para la prueba.
+  replicas: 1
+  strategy:
+    type: Recreate # con 1 réplica y poca CPU libre, evita pedir recursos para dos pods durante el rollout
+  selector:
+    matchLabels:
+      app: asistente
+  template:
+    metadata:
+      labels:
+        app: asistente
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: asistente
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: asistente
+          image: "${IMAGE}" # <acr>.azurecr.io/clinical-assistant-service:<SHA> (tag inmutable)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: asistente-config
+          env:
+            - name: ASISTENTE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: asistente-secrets, key: ASISTENTE_API_KEY }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: asistente-secrets, key: REDIS_PASSWORD }
+            - name: EVENTHUBS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef: { name: asistente-secrets, key: EVENTHUBS_CONNECTION_STRING }
+          # Requests pequeños: Triage + add-ons ya piden ~1,9 vCPU en el primer nodo.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Arranque de Spring + embeddings del corpus: hasta 5 s * 36 = 3 min antes de reiniciar.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: asistente-keyvault

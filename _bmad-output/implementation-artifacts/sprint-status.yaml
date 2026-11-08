@@ -52,7 +52,7 @@ development_status:
   3-1-persistir-y-consultar-alertas-de-escalamiento: review
   3-2-recibir-alertas-en-vivo-por-sse-con-recuperación: review
   3-3-consultar-la-carga-activa-de-urgencias-por-nivel: review
-  3-4-exponer-el-asistente-clínico-en-azure: backlog
+  3-4-exponer-el-asistente-clínico-en-azure: review
   epic-3-retrospective: optional
 
   epic-4: in-progress

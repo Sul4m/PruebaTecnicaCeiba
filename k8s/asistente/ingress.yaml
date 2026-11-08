@@ -1,0 +1,34 @@
+# Publica solo /asistente (no /actuator) en el MISMO host y controlador (nginx-triage) que Triage.
+# TLS propio: ingress-nginx lee el secreto TLS en el namespace del Ingress, así que no puede referenciar
+# `triage-tls` (vive en el namespace `triage`). cert-manager emite `asistente-tls` para el mismo host
+# (HTTP-01) y no depende del orden de aplicación. No hay conflicto con el Ingress de Triage: el servidor
+# de nginx es por host y los paths (/triage, /asistente) son distintos; el Ingress de Triage no se toca.
+# Los timeouts de 120 s cubren una consulta al LLM (hasta ~30 s + embeddings). El stream SSE de Triage
+# (/triage/alertas/stream) conserva sus anotaciones en su propio Ingress (otro path, otro location).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: asistente
+  namespace: asistente
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+spec:
+  ingressClassName: nginx-triage
+  tls:
+    - hosts:
+        - "${INGRESS_HOST}"
+      secretName: asistente-tls
+  rules:
+    - host: "${INGRESS_HOST}"
+      http:
+        paths:
+          - path: /asistente
+            pathType: Prefix
+            backend:
+              service:
+                name: asistente
+                port:
+                  name: http

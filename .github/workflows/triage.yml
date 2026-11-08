@@ -1,16 +1,19 @@
-name: triage
+name: deploy
 
-# Valida, prueba, construye/publica en ACR (tag inmutable = SHA) y aplica los manifests.
+# (Archivo triage.yml, ahora despliega Triage y el Asistente Clínico.)
+# Valida, prueba, construye/publica en ACR (tag inmutable = SHA) las dos imágenes y aplica los manifests.
 # Terraform NO corre aquí: ver infra.yml. Sin credenciales en el repo: OIDC hacia Azure.
 # Variables (Settings > Secrets and variables > Actions > Variables), ninguna es secreta:
 #   (job deploy usa environment `azure`) AZURE_CLIENT_ID (ci_deploy_client_id), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME,
 #   AKS_NAME, RESOURCE_GROUP, KV_NAME, TRIAGE_WORKLOAD_CLIENT_ID, DB_HOST, DB_USER,
-#   KAFKA_BOOTSTRAP_SERVERS, INGRESS_HOST   (salidas de `terraform output`)
+#   KAFKA_BOOTSTRAP_SERVERS, INGRESS_HOST, ASISTENTE_WORKLOAD_CLIENT_ID, REDIS_HOST,
+#   AZURE_OPENAI_ENDPOINT   (salidas de `terraform output`);  opcional: ASISTENTE_RAG_THRESHOLD (defecto 0.45)
 
 on:
   pull_request:
     paths:
       - "triage-service/**"
+      - "clinical-assistant-service/**"
       - "k8s/**"
       - "scripts/render-k8s.sh"
       - ".github/workflows/triage.yml"
@@ -18,6 +21,7 @@ on:
     branches: [master]
     paths:
       - "triage-service/**"
+      - "clinical-assistant-service/**"
       - "k8s/**"
       - "scripts/render-k8s.sh"
       - ".github/workflows/triage.yml"
@@ -27,7 +31,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: triage-deploy
+  group: deploy
   cancel-in-progress: false
 
 jobs:
@@ -47,8 +51,12 @@ jobs:
           INGRESS_HOST: example.cloudapp.azure.com
           INGRESS_DNS_LABEL: example
           ACME_EMAIL: ci@example.com
+          ASISTENTE_WORKLOAD_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+          REDIS_HOST: redis.example.net
+          AZURE_OPENAI_ENDPOINT: https://example.openai.azure.com/
+          ASISTENTE_RAG_THRESHOLD: "0.45"
         run: |
-          scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage k8s/platform
+          scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage k8s/asistente k8s/platform
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/kubeconform" -strict -summary -ignore-missing-schemas "$RUNNER_TEMP"/k8s/*.yaml
       - uses: hashicorp/setup-terraform@v3
@@ -74,9 +82,22 @@ jobs:
         working-directory: triage-service
         run: ./gradlew test --no-daemon
 
+  test-asistente:
+    runs-on: ubuntu-latest # Docker disponible para Testcontainers (Kafka, Redis)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Tests del Asistente
+        working-directory: clinical-assistant-service
+        run: ./gradlew test --no-daemon
+
   deploy:
     if: github.event_name != 'pull_request'
-    needs: [validate, test]
+    needs: [validate, test, test-asistente]
     runs-on: ubuntu-latest
     environment: azure
     permissions:
@@ -93,23 +114,25 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Construir y publicar la imagen (tag = SHA)
+      - name: Construir y publicar las imágenes (tag = SHA)
         env:
           ACR_NAME: ${{ vars.ACR_NAME }}
         run: |
-          IMAGE="${ACR_NAME}.azurecr.io/triage-service:${IMAGE_TAG}"
-          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
-          # Re-ejecución: si el tag (inmutable) ya existe se omite build+push y se sigue al deploy.
-          if az acr repository show --name "$ACR_NAME" --image "triage-service:${IMAGE_TAG}" --output none 2>/dev/null; then
-            echo "El tag ${IMAGE_TAG} ya existe en ACR; se omite build y push."
-            exit 0
-          fi
           az acr login --name "$ACR_NAME"
-          docker build -t "$IMAGE" triage-service
-          docker push "$IMAGE"
-          # Hace el tag de solo lectura: no puede sobrescribirse (inmutable).
-          az acr repository update --name "$ACR_NAME" \
-            --image "triage-service:${IMAGE_TAG}" --write-enabled false
+          # Servicio -> directorio de contexto de build (el Dockerfile está en cada servicio).
+          for svc in triage-service clinical-assistant-service; do
+            IMAGE="${ACR_NAME}.azurecr.io/${svc}:${IMAGE_TAG}"
+            # Re-ejecución: si el tag (inmutable) ya existe se omite build+push y se sigue al deploy.
+            if az acr repository show --name "$ACR_NAME" --image "${svc}:${IMAGE_TAG}" --output none 2>/dev/null; then
+              echo "El tag ${svc}:${IMAGE_TAG} ya existe en ACR; se omite build y push."
+              continue
+            fi
+            docker build -t "$IMAGE" "$svc"
+            docker push "$IMAGE"
+            # Hace el tag de solo lectura: no puede sobrescribirse (inmutable).
+            az acr repository update --name "$ACR_NAME" \
+              --image "${svc}:${IMAGE_TAG}" --write-enabled false
+          done
 
       - uses: azure/setup-kubectl@v4
       - uses: azure/use-kubelogin@v1
@@ -123,20 +146,32 @@ jobs:
 
       - name: Renderizar y aplicar manifests
         env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
           TRIAGE_WORKLOAD_CLIENT_ID: ${{ vars.TRIAGE_WORKLOAD_CLIENT_ID }}
+          ASISTENTE_WORKLOAD_CLIENT_ID: ${{ vars.ASISTENTE_WORKLOAD_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           KV_NAME: ${{ vars.KV_NAME }}
           DB_HOST: ${{ vars.DB_HOST }}
           DB_USER: ${{ vars.DB_USER }}
           KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
           INGRESS_HOST: ${{ vars.INGRESS_HOST }}
+          REDIS_HOST: ${{ vars.REDIS_HOST }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          # Provisional hasta calibrar con el embedding real (deferred-work.md).
+          ASISTENTE_RAG_THRESHOLD: ${{ vars.ASISTENTE_RAG_THRESHOLD || '0.45' }}
           INGRESS_DNS_LABEL: unused
           ACME_EMAIL: unused
         run: |
-          scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage
-          # El namespace lo crea una vez un administrador (ver docs/despliegue-azure.md).
-          rm "$RUNNER_TEMP/k8s/triage-namespace.yaml"
-          for f in secretproviderclass serviceaccount configmap service ingress deployment; do
-            kubectl apply -f "$RUNNER_TEMP/k8s/triage-$f.yaml"
+          # Los namespaces los crea una vez un administrador (ver docs/despliegue-azure.md).
+          IMAGE="${ACR_NAME}.azurecr.io/triage-service:${IMAGE_TAG}" \
+            scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage
+          IMAGE="${ACR_NAME}.azurecr.io/clinical-assistant-service:${IMAGE_TAG}" \
+            scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/asistente
+          rm "$RUNNER_TEMP/k8s/triage-namespace.yaml" "$RUNNER_TEMP/k8s/asistente-namespace.yaml"
+          for svc in triage asistente; do
+            for f in secretproviderclass serviceaccount configmap service ingress deployment; do
+              kubectl apply -f "$RUNNER_TEMP/k8s/$svc-$f.yaml"
+            done
           done
           kubectl -n triage rollout status deployment/triage --timeout=300s
+          kubectl -n asistente rollout status deployment/asistente --timeout=420s

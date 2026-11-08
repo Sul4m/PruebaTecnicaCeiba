@@ -7,12 +7,15 @@ locals {
     project = "PruebaTecnicaCeiba"
   }
 
-  # Una entrada por servicio desplegado en AKS. La Story 3.4 añade "asistente" aquí
-  # (y su Redis en redis.tf) sin tocar el resto.
+  # Una entrada por servicio desplegado en AKS (Redis en redis.tf, Azure OpenAI en openai.tf).
   workloads = {
     triage = {
       namespace       = "triage"
       service_account = "triage"
+    }
+    asistente = {
+      namespace       = "asistente"
+      service_account = "asistente"
     }
   }
 

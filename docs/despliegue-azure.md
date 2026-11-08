@@ -1,4 +1,4 @@
-# Despliegue de Triage en Azure (Story 1.6)
+# Despliegue de Triage en Azure (Story 1.6; ampliado en 3.4, ver la última sección)
 
 > **Estado: código listo, NO validado contra Azure real.** Solo se ejecutaron `terraform fmt/init/validate` y las pruebas de Triage. Nada de lo siguiente se ha aplicado todavía.
 
@@ -126,3 +126,79 @@ Valida la suscripción activa, el nombre y el tag del grupo, lista los recursos 
 - **ACME:** el `ClusterIssuer` se aplicó sin `email` (opcional en Let's Encrypt) para no enviar un correo personal.
 - **kubelogin:** instalar el de Azure (`az aks install-cli`), no el paquete homónimo de Homebrew (otro programa).
 - **Verificado:** HTTPS con certificado emitido, 401 sin API key, 404 para id inexistente, `POST /triage/pacientes` (E1) → 201 `CRITICO` SLA 5, SSE 200 sin cortes hasta el heartbeat (~15 s), productor Kafka conectado a Event Hubs con idempotencia.
+
+## Story 3.4 y 4.4 (infraestructura de IA): Asistente Clínico en Azure
+
+> **Estado: código listo, NO validado contra Azure real.** Solo `terraform fmt/validate/plan` (sin apply), render de manifests y los tests del Asistente. Nada de esta sección se ha aplicado.
+
+Qué añade: Azure Managed Redis (`redis.tf`), cuenta Azure OpenAI con los deployments `gpt-5.4-mini` y `text-embedding-3-small` (`openai.tf`), identidad/federación/rol de KV `asistente` (en `local.workloads`), consumer group en `triaje.eventos`, `k8s/asistente/` y el pipeline para ambas imágenes.
+
+### Orden de pasos para aplicar
+
+1. **Terraform: el PRIMER apply de 3.4 lo hace el administrador humano (Owner) manualmente, no el CI**: el plan cambia la condición ABAC de `ci_terraform_apply_rbac_admin` (añade el rol `Cognitive Services OpenAI User`, que el apply de CI necesita para asignarlo), lo que **reemplaza** esa asignación de la propia identidad de apply; un apply desde CI no puede modificarse a sí mismo. Después de ese apply el CI ya puede aplicar normalmente; no se amplían privilegios (el único cambio es un rol de solo inferencia en la lista cerrada de la condición):
+   ```bash
+   cd infra/terraform && terraform init -backend-config=backend.hcl && terraform plan -out=tfplan && terraform apply tfplan
+   ```
+   Crea (plan de referencia: 10 a crear, 3 modificaciones menores de deriva ya existente, 1 reemplazo): cuenta OpenAI + 2 deployments, Managed Redis, consumer group, identidad `id-asistente`, su federated credential, rol KV y rol OpenAI. Los deployments y Redis tardan varios minutos.
+2. **Secretos** (reejecutable; conserva las API keys existentes):
+   ```bash
+   scripts/bootstrap-secrets.sh $(terraform -chdir=infra/terraform output -raw resource_group) \
+     $(terraform -chdir=infra/terraform output -raw key_vault_name) \
+     $(terraform -chdir=infra/terraform output -raw eventhubs_namespace) \
+     $(terraform -chdir=infra/terraform output -raw redis_name)
+   ```
+   Escribe `asistente-api-key`, `asistente-eventhubs-connection-string` (regla SAS propia `asistente-app`, Listen+Send: consume y publica al DLT) y `redis-password`.
+3. **Namespace (una vez, administrador)**: `kubectl apply -f k8s/asistente/namespace.yaml`.
+4. **Variables de GitHub Actions** nuevas: `ASISTENTE_WORKLOAD_CLIENT_ID` (`asistente_workload_client_id`), `REDIS_HOST` (`redis_host`), `AZURE_OPENAI_ENDPOINT` (`openai_endpoint`); opcional `ASISTENTE_RAG_THRESHOLD` (defecto 0,45).
+5. **Despliegue**: push a `master` (workflow `triage.yml`, ahora "deploy") construye y publica `triage-service:<SHA>` y `clinical-assistant-service:<SHA>` (tags inmutables) y aplica ambos manifests con la misma identidad `id-gh-deploy` (sin ampliar privilegios: los roles de AKS ya son de clúster). Primer despliegue a mano: `az acr build` de cada servicio, `scripts/render-k8s.sh <out> k8s/asistente` (con `IMAGE` y las variables) y `kubectl apply`.
+
+### Verificación (sin cambiar la API de Triage)
+
+```bash
+HOST=$(terraform -chdir=infra/terraform output -raw ingress_host)
+AKEY=$(az keyvault secret show --vault-name <kv> --name asistente-api-key --query value -o tsv)
+curl -i https://$HOST/asistente/estado-urgencias -H "X-API-Key: $AKEY"      # 200, conteos por nivel
+# registrar un paciente en Triage (ver arriba) y repetir: el conteo del nivel sube (vía Event Hubs)
+curl -N https://$HOST/triage/alertas/stream -H "X-API-Key: $TKEY"            # sigue sin cortarse
+curl -i -X POST https://$HOST/asistente/consulta -H "X-API-Key: $AKEY" -H 'Content-Type: application/json' -d '<consulta del baseline>'
+kubectl -n asistente logs deploy/asistente | head   # sin errores de Redis/Kafka/OpenAI
+```
+
+### Decisiones de autenticación
+
+| Recurso | Mecanismo | Por qué |
+|---|---|---|
+| Azure OpenAI | **Entra ID** (Workload Identity + rol `Cognitive Services OpenAI User` sobre la cuenta); `local_auth_enabled = false` | Spring AI 1.0.9 usa `DefaultAzureCredential` cuando `api-key` está vacío (verificado en el bytecode del autoconfigure). No existe clave: ni en estado, ni en Key Vault, ni en el clúster. Requiere subdominio propio (`custom_subdomain_name`). |
+| Redis | **Access key** → Key Vault (`redis-password`, escrita por script) + TLS 10000 | Lettuce/Spring Data Redis no hace Entra sin librería adicional. Honesto: `azurerm_managed_redis` guarda `primary_access_key` en el estado (sensible); Terraform no lo expone ni lo escribe en Key Vault. |
+| Event Hubs | SAS por servicio (`asistente-app`) → Key Vault | Igual que Triage; el diferido a roles Data Receiver/Sender con OAUTHBEARER sigue abierto. |
+| API del Asistente | API key propia (`asistente-api-key`) por script | Distinta de la de Triage (ADR-0008). |
+
+Notas: la identidad `id-asistente` y la de Triage tienen `Key Vault Secrets User` sobre todo el vault (patrón existente), así que cada una puede leer los secretos de la otra; endurecer con un vault por servicio o asignaciones por secreto queda como diferido. El perfil `azure` del Asistente exige `REDIS_HOST` y `REDIS_PASSWORD` (sin valores por defecto, TLS siempre activo) y desactiva la creación de topics (`assistant.projection.create-topics=false`; los crea Terraform).
+
+### Ingress y SSE
+
+El Ingress del Asistente (namespace `asistente`) usa el mismo `nginx-triage` y host, path `/asistente`, con su propio TLS: `tls.secretName: asistente-tls` y la anotación de cert-manager (`letsencrypt-prod`). No reutiliza `triage-tls` porque ingress-nginx lee el secreto en el namespace del Ingress y ese secreto vive en `triage`; así tampoco depende del orden de aplicación. Los dos certificados cubren el mismo host (dos challenges HTTP-01); el servidor de nginx es por host y los paths son distintos. El Ingress de Triage no se toca, así que `/triage/alertas/stream` conserva `proxy-buffering: off` y timeouts de 3600 s (annotations por location). Sin verificar contra el clúster real: que la emisión de dos certificados para el mismo host no choque en HTTP-01.
+
+### Capacidad del clúster
+
+Triage pide 250m CPU/512Mi; el Asistente 100m CPU/384Mi (límites 500m/768Mi), `replicas: 1`, `Recreate`. Con 2 nodos de 2 vCPU debería programarse en el segundo nodo; si queda `Pending`, revisar `kubectl describe pod` y reducir requests.
+
+### Costos estimados adicionales (ESTIMACIONES, verificar en la calculadora de Azure)
+
+| Concepto | USD/mes aprox. |
+|---|---|
+| Azure Managed Redis `Balanced_B0` (sin HA) | 15-20 |
+| Azure OpenAI (pago por token; demo con unas decenas de consultas + embeddings del corpus) | <5 |
+| Consumer group / identidades / roles | 0 |
+| Segundo nodo AKS `D2s_v6` (ya existe, antes no contado) | ~70 |
+
+El total real del entorno (2 nodos D2s_v6, PostgreSQL `GP_Standard_D2ds_v4`, Event Hubs, ACR, IP/LB, Redis, OpenAI) ronda **300-350 USD/mes (~10-12 USD/día)**; la cifra de 120-140 USD de la sección anterior corresponde al diseño original de 1 nodo B2ms y PostgreSQL Burstable. Eliminar al terminar con `scripts/destroy-azure.sh`.
+
+### Qué NO se pudo validar
+
+- `terraform apply`: cuota/disponibilidad de `Balanced_B0` en `eastus2`, de la capacidad de los deployments y de `GlobalStandard` en la suscripción; que `azurerm_managed_redis` acepte `EnterpriseCluster` con `high_availability_enabled = false`; versión `2026-03-17` de gpt-5.4-mini (tomada de `az cognitiveservices model list`).
+- `az redisenterprise database list-keys` (nombre de comando/forma de la salida para Managed Redis) en `bootstrap-secrets.sh`.
+- Conexión TLS+auth a Redis desde Lettuce, SASL_SSL a Event Hubs del consumidor, token Entra contra OpenAI desde el pod y los timeouts del cliente Azure.
+- Emisión del certificado `asistente-tls` junto al de Triage y que el pod programe junto a Triage.
+- Umbral de similitud (0,45) sin calibrar con `text-embedding-3-small` real.
+- El workflow ampliado (no ejecutado).

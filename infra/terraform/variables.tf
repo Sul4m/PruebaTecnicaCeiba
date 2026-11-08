@@ -82,3 +82,27 @@ variable "aks_node_count" {
   type        = number
   default     = 2
 }
+
+variable "asistente_consumer_group" {
+  description = "Consumer group del Asistente en triaje.eventos (= ASISTENTE_KAFKA_GROUP_ID)."
+  type        = string
+  default     = "clinical-assistant-urgencias"
+}
+
+variable "redis_sku_name" {
+  description = "SKU de Azure Managed Redis. Balanced_B0 (0,5 GB) es el más barato; suficiente para la proyección de urgencias."
+  type        = string
+  default     = "Balanced_B0"
+}
+
+variable "openai_chat_capacity" {
+  description = "Capacidad (miles de tokens por minuto) del deployment gpt-5.4-mini (GlobalStandard)."
+  type        = number
+  default     = 10
+}
+
+variable "openai_embedding_capacity" {
+  description = "Capacidad (miles de tokens por minuto) del deployment text-embedding-3-small."
+  type        = number
+  default     = 10
+}

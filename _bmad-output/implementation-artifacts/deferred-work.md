@@ -43,3 +43,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-exponer-triage-en-azure.md`
   summary: Verificar por checksum el binario de kubeconform descargado en el workflow `triage.yml` (o usar una accion fijada por SHA).
   evidence: Se descarga con curl desde una release de GitHub sin comprobar hash.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-exponer-el-asistente-clinico-en-azure.md`
+  summary: Limitar hilos y cuota/costo del chat por API key (rate limit por clave) además del bulkhead global.
+  evidence: El bulkhead de la 4.3 es global; una sola clave válida puede agotarlo y generar costo en Azure OpenAI (OWASP LLM10).
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-4-exponer-el-asistente-clinico-en-azure.md`
+  summary: Calibrar el umbral de similitud (hoy 0,45 provisional, `ASISTENTE_RAG_THRESHOLD`) con `text-embedding-3-small` real y las tres consultas del baseline, tras el despliegue.
+  evidence: Solo hay calibración con el doble de embeddings de desarrollo.

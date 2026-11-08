@@ -50,6 +50,9 @@ data "azurerm_role_definition" "assignable" {
     "Azure Kubernetes Service Cluster User Role",
     "Azure Kubernetes Service RBAC Writer",
     "Azure Kubernetes Service RBAC Cluster Admin",
+    # Story 3.4: el apply de CI asigna este rol a la identidad del Asistente (solo inferencia; sin
+    # gestión de la cuenta ni de claves).
+    "Cognitive Services OpenAI User",
   ])
   name  = each.value
   scope = "/subscriptions/${var.subscription_id}"

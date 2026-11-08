@@ -25,3 +25,12 @@ resource "azurerm_eventhub" "events_dlt" {
 
 # La regla SAS y su connection string se crean con scripts/bootstrap-secrets.sh para que la clave
 # no quede en el estado de Terraform (un azurerm_eventhub_namespace_authorization_rule la guardaría).
+
+# Grupo de consumidores del Asistente (Story 3.4). Debe coincidir con ASISTENTE_KAFKA_GROUP_ID
+# (k8s/asistente/configmap.yaml). El consumidor Kafka lo usa por nombre.
+resource "azurerm_eventhub_consumer_group" "asistente" {
+  name                = var.asistente_consumer_group
+  namespace_name      = azurerm_eventhub_namespace.main.name
+  eventhub_name       = azurerm_eventhub.events.name
+  resource_group_name = azurerm_resource_group.main.name
+}
