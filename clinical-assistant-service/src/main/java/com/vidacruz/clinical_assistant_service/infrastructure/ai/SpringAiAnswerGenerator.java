@@ -48,30 +48,32 @@ public class SpringAiAnswerGenerator implements AnswerGenerationPort {
 
     @Override
     public Mono<String> generate(String question, List<RetrievedChunk> context) {
-        String fragments = context.stream()
-                .map(rc -> "<fragmento protocolo=\"%s\" seccion=\"%s\">%s</fragmento>".formatted(
-                        rc.chunk().protocolId(), escape(rc.chunk().sectionTitle()), escape(rc.chunk().body())))
-                .collect(Collectors.joining("\n"));
-        String user = "FRAGMENTOS:\n" + fragments + "\n\nPREGUNTA:\n<pregunta>" + escape(question) + "</pregunta>";
-
-        Mono<String> call = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(user)
-                .stream()
-                .content()
-                .collect(StringBuilder::new, StringBuilder::append)
-                .map(StringBuilder::toString)
-                .map(String::strip)
-                .filter(s -> !s.isEmpty())
-                .map(this::cap)
-                .timeout(props.llmTimeout());
+        Mono<String> call = Mono.defer(() -> {
+            String fragments = context.stream()
+                    .map(rc -> "<fragmento protocolo=\"%s\" seccion=\"%s\">%s</fragmento>".formatted(
+                            rc.chunk().protocolId(), escape(rc.chunk().sectionTitle()), escape(rc.chunk().body())))
+                    .collect(Collectors.joining("\n"));
+            String user = "FRAGMENTOS:\n" + fragments + "\n\nPREGUNTA:\n<pregunta>" + escape(question) + "</pregunta>";
+            return chatClient.prompt()
+                    .system(SYSTEM_PROMPT)
+                    .user(user)
+                    .stream()
+                    .content()
+                    .collect(StringBuilder::new, StringBuilder::append)
+                    .map(StringBuilder::toString)
+                    .map(String::strip)
+                    .filter(s -> !s.isEmpty())
+                    .map(this::cap)
+                    // Respuesta vacia = fallo del proveedor: debe verlo el circuito y salir como 503.
+                    .switchIfEmpty(Mono.error(() -> new IllegalStateException("respuesta vacia del modelo")))
+                    .timeout(props.llmTimeout());
+        });
         // Bulkhead + circuit breaker + metricas; todo fallo del proveedor termina en AssistantUnavailableException.
         return guard.protect(LlmGuard.CHAT, call)
                 .onErrorMap(t -> !(t instanceof AssistantUnavailableException), t -> {
                     log.warn("Generacion no disponible ({})", t.getClass().getSimpleName());
                     return new AssistantUnavailableException("fallo del proveedor de chat", t);
-                })
-                .switchIfEmpty(Mono.error(() -> new AssistantUnavailableException("respuesta vacia del modelo", null)));
+                });
     }
 
     /** Neutraliza etiquetas: el texto no confiable no puede forjar ni cerrar fragmentos. */

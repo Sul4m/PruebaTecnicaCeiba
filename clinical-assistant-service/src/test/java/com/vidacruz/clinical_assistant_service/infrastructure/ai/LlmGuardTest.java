@@ -100,4 +100,68 @@ class LlmGuardTest {
         StepVerifier.create(guard.protect(LlmGuard.CHAT, Mono.<String>empty())).verifyComplete();
         assertThat(registry.find("assistant.llm.failures").counters()).isEmpty();
     }
+
+    private static Mono<String> http(int status) {
+        return Mono.error(org.springframework.web.reactive.function.client.WebClientResponseException
+                .create(status, "x", org.springframework.http.HttpHeaders.EMPTY, new byte[0], null));
+    }
+
+    @Test
+    void clientErrors4xxStill503ButDoNotOpenTheCircuit() {
+        var guard = guard(3, 4);
+        for (int i = 0; i < 6; i++) {
+            StepVerifier.create(guard.protect(LlmGuard.CHAT, http(i % 2 == 0 ? 400 : 403)))
+                    .expectError(AssistantUnavailableException.class).verify();
+        }
+        assertThat(guard.circuitBreaker(LlmGuard.CHAT).getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    void status429And5xxCountAsCircuitFailures() {
+        var guard = guard(3, 4);
+        StepVerifier.create(guard.protect(LlmGuard.CHAT, http(429))).expectError().verify();
+        StepVerifier.create(guard.protect(LlmGuard.CHAT, http(503))).expectError().verify();
+        StepVerifier.create(guard.protect(LlmGuard.CHAT, http(500))).expectError().verify();
+        assertThat(guard.circuitBreaker(LlmGuard.CHAT).getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    void cancellationIsRecordedInTimerAsCancelled() {
+        var guard = guard(5, 4);
+        guard.protect(LlmGuard.CHAT, Mono.<String>never()).subscribe().dispose();
+        assertThat(registry.find("assistant.llm.calls").tag("outcome", "cancelled").timer().count()).isEqualTo(1);
+    }
+
+    @Test
+    void emptyResultIsTaggedEmptyNotSuccess() {
+        var guard = guard(5, 4);
+        StepVerifier.create(guard.protect(LlmGuard.CHAT, Mono.<String>empty())).verifyComplete();
+        assertThat(registry.find("assistant.llm.calls").tag("outcome", "empty").timer().count()).isEqualTo(1);
+        assertThat(registry.find("assistant.llm.calls").tag("outcome", "success").timer()).isNull();
+    }
+
+    @Test
+    void schedulerSaturationIs503WithSchedulerFullCounterAndCircuitStaysClosed() {
+        var guard = guard(1, 4);
+        for (int i = 0; i < 3; i++) {
+            StepVerifier.create(guard.protect(LlmGuard.EMBEDDINGS,
+                    Mono.<String>error(new java.util.concurrent.RejectedExecutionException("full"))))
+                    .expectError(AssistantUnavailableException.class).verify();
+        }
+        assertThat(count("assistant.llm.rejections", "reason", "scheduler_full")).isEqualTo(3);
+        assertThat(guard.circuitBreaker(LlmGuard.EMBEDDINGS).getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    void embeddingsBulkheadSaturationRejectsImmediately() {
+        var guard = new LlmGuard(new AssistantLlmProperties(
+                new AssistantLlmProperties.CircuitBreaker(50, 5, 5, Duration.ofSeconds(30), 1),
+                new AssistantLlmProperties.Bulkhead(4, 1, Duration.ZERO)), registry);
+        var first = guard.protect(LlmGuard.EMBEDDINGS, Mono.never()).subscribe();
+        StepVerifier.create(guard.protect(LlmGuard.EMBEDDINGS, Mono.never()))
+                .expectError(AssistantUnavailableException.class).verify(Duration.ofSeconds(1));
+        assertThat(registry.find("assistant.llm.rejections").tag("operation", "embeddings")
+                .tag("reason", "bulkhead_full").counter().count()).isEqualTo(1);
+        first.dispose();
+    }
 }

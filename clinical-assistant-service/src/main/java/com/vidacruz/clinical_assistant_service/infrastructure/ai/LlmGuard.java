@@ -8,6 +8,10 @@ import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.ai.retry.NonTransientAiException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
+import com.azure.core.exception.HttpResponseException;
 import com.vidacruz.clinical_assistant_service.domain.AssistantUnavailableException;
 import com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties;
 import io.github.resilience4j.bulkhead.Bulkhead;
@@ -67,8 +71,9 @@ public class LlmGuard {
                     .minimumNumberOfCalls(c.minimumNumberOfCalls())
                     .waitDurationInOpenState(c.waitDurationInOpenState())
                     .permittedNumberOfCallsInHalfOpenState(c.permittedCallsInHalfOpenState())
-                    // Saturacion local del scheduler: no indica que el proveedor este caido.
+                    // Saturacion local del scheduler y errores 4xx (salvo 429): no indican proveedor caido.
                     .ignoreExceptions(RejectedExecutionException.class)
+                    .recordException(t -> !isClientError(t))
                     .build());
         });
     }
@@ -89,13 +94,32 @@ public class LlmGuard {
         Mono<T> timed = Mono.defer(() -> {
             Timer.Sample sample = Timer.start(registry);
             return call
-                    .doOnSuccess(v -> sample.stop(timer(operation, "success")))
-                    .doOnError(e -> sample.stop(timer(operation, "error")));
+                    .doOnSuccess(v -> sample.stop(timer(operation, v == null ? "empty" : "success")))
+                    .doOnError(e -> sample.stop(timer(operation, "error")))
+                    .doOnCancel(() -> sample.stop(timer(operation, "cancelled")));
         });
         return timed
                 .transformDeferred(CircuitBreakerOperator.of(circuitBreaker(operation)))
                 .transformDeferred(BulkheadOperator.of(bulkhead(operation)))
                 .onErrorMap(t -> translate(operation, t));
+    }
+
+    /** 4xx del proveedor (filtro de contenido, 401/403, prompt invalido), excepto 429 que si cuenta. */
+    static boolean isClientError(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause() == c ? null : c.getCause()) {
+            int status = -1;
+            if (c instanceof WebClientResponseException w) {
+                status = w.getStatusCode().value();
+            } else if (c instanceof HttpResponseException h && h.getResponse() != null) {
+                status = h.getResponse().getStatusCode();
+            } else if (c instanceof NonTransientAiException) {
+                return true;
+            }
+            if (status >= 400) {
+                return status < 500 && status != 429;
+            }
+        }
+        return false;
     }
 
     private Timer timer(String operation, String outcome) {

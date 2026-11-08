@@ -84,8 +84,11 @@ public class SpringAiProtocolRetriever implements ProtocolRetrievalPort {
         Mono<List<RetrievedChunk>> search = Mono.fromCallable(() -> searchBlocking(question))
                 .subscribeOn(scheduler)
                 .timeout(props.embeddingTimeout());
-        // La indexacion (arranque/reintento) tiene su propio timeout; la busqueda por consulta va protegida.
-        return indexing.then(guard.protect(LlmGuard.EMBEDDINGS, search)).onErrorMap(this::toUnavailable);
+        // Indexacion pendiente (reintento) y busqueda van protegidas: con circuito abierto no se contacta al proveedor.
+        // Ya indexado, la indexacion es un no-op y no se cuenta en el circuito.
+        Mono<Void> ensureIndexed = Mono.defer(() -> indexed ? Mono.<Void>empty()
+                : guard.protect(LlmGuard.EMBEDDINGS, indexing));
+        return ensureIndexed.then(guard.protect(LlmGuard.EMBEDDINGS, search)).onErrorMap(this::toUnavailable);
     }
 
     private void indexBlocking() {

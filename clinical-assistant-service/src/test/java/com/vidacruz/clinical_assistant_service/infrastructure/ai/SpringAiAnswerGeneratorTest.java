@@ -117,4 +117,44 @@ class SpringAiAnswerGeneratorTest {
         StepVerifier.create(generator(2000, Duration.ofMillis(200)).generate("q", ctx))
                 .expectError(AssistantUnavailableException.class).verify(Duration.ofSeconds(5));
     }
+
+    @Test
+    void synchronousModelExceptionGoesThroughGuardAndOpensCircuit() {
+        var registry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var guard = new LlmGuard(new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties(
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.CircuitBreaker(
+                        50, 2, 2, Duration.ofSeconds(30), 1),
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.Bulkhead(
+                        4, 4, Duration.ZERO)), registry);
+        var props = new AssistantRagProperties("v1", "x", 3, 0.3, 400, 2000,
+                Duration.ofSeconds(2), Duration.ofSeconds(2), new AssistantRagProperties.Scheduler(1, 1));
+        var gen = new SpringAiAnswerGenerator(ChatClient.builder(model).build(), props, guard);
+        when(model.stream(any(Prompt.class))).thenThrow(new IllegalStateException("sync boom"));
+
+        for (int i = 0; i < 3; i++) {
+            StepVerifier.create(gen.generate("q", ctx)).expectError(AssistantUnavailableException.class).verify();
+        }
+        assertThat(guard.circuitBreaker(LlmGuard.CHAT).getState())
+                .isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN);
+        org.mockito.Mockito.verify(model, org.mockito.Mockito.times(2)).stream(any(Prompt.class));
+    }
+
+    @Test
+    void emptyModelResponseIs503AndCountsAsCircuitFailure() {
+        var guard = new LlmGuard(new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties(
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.CircuitBreaker(
+                        50, 2, 2, Duration.ofSeconds(30), 1),
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.Bulkhead(
+                        4, 4, Duration.ZERO)), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        var props = new AssistantRagProperties("v1", "x", 3, 0.3, 400, 2000,
+                Duration.ofSeconds(2), Duration.ofSeconds(2), new AssistantRagProperties.Scheduler(1, 1));
+        var gen = new SpringAiAnswerGenerator(ChatClient.builder(model).build(), props, guard);
+        when(model.stream(any(Prompt.class))).thenReturn(Flux.just(chunk("   ")));
+
+        for (int i = 0; i < 2; i++) {
+            StepVerifier.create(gen.generate("q", ctx)).expectError(AssistantUnavailableException.class).verify();
+        }
+        assertThat(guard.circuitBreaker(LlmGuard.CHAT).getState())
+                .isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN);
+    }
 }

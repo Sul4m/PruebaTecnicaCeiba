@@ -33,3 +33,15 @@ context:
 
 - Las metricas no se exponen por HTTP (actuator solo expone `health`); quedan en el `MeterRegistry`.
 - Pendiente fuera de alcance: cuota por clave de API (solo bulkhead global).
+
+## Review Triage Log
+
+**Patches aplicados (cada uno con test que falla si se revierte):**
+- P1: errores 4xx del proveedor (WebClientResponseException / HttpResponseException / NonTransientAiException), salvo 429, no cuentan como fallo del circuito; siguen siendo 503.
+- P2: la indexacion pendiente pasa por `guard.protect(EMBEDDINGS)`; con circuito abierto no se contacta al proveedor (ya indexada es no-op y no cuenta en la ventana).
+- P3: el armado del prompt y `stream()` van en `Mono.defer` dentro del guard.
+- P4: timer con `outcome=cancelled` en cancelacion.
+- P5: Mono vacio se etiqueta `outcome=empty` en el timer; en el generador la respuesta vacia se emite como error antes del guard, por lo que cuenta como fallo del circuito y sale 503. El guard por si solo no trata el vacio como fallo.
+- P6: tests de saturacion del scheduler (`scheduler_full`, circuito CLOSED) y del bulkhead de embeddings.
+
+**Diferidos (ver deferred-work.md):** hilo bloqueante vivo tras timeout; validacion de propiedades (minimumNumberOfCalls <= window, half-open configurable); metricas de estado del circuito (TaggedCircuitBreakerMetrics); test half-open/recuperacion; IT HTTP con embeddings caido.

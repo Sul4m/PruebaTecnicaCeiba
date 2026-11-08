@@ -245,6 +245,31 @@ class SpringAiProtocolRetrieverTest {
     }
 
     @Test
+    void openEmbeddingsCircuitRejectsWithoutIndexingAgainstTheProvider() {
+        var calls = new AtomicInteger();
+        var model = new DevEmbeddingModel() {
+            @Override
+            public float[] embed(String text) {
+                calls.incrementAndGet();
+                return super.embed(text);
+            }
+        };
+        var cfg = new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties(
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.CircuitBreaker(
+                        50, 2, 2, Duration.ofSeconds(30), 1),
+                new com.vidacruz.clinical_assistant_service.infrastructure.config.AssistantLlmProperties.Bulkhead(
+                        4, 4, Duration.ZERO));
+        var guard = new LlmGuard(cfg, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+        var r = new SpringAiProtocolRetriever(SimpleVectorStore.builder(model).build(), scheduler,
+                props(0.30, 2, 10), corpus, guard);
+        guard.circuitBreaker(LlmGuard.EMBEDDINGS).transitionToOpenState();
+
+        StepVerifier.create(r.retrieve(Q1)).expectError(AssistantUnavailableException.class).verify();
+        assertThat(calls).hasValue(0);
+        assertThat(r.isIndexed()).isFalse();
+    }
+
+    @Test
     void stalledEmbeddingTimesOutToUnavailable() {
         var stalled = new DevEmbeddingModel() {
             @Override
