@@ -21,15 +21,18 @@ public class RegisterPatientUseCase {
     private final ClassificationMetricsPort metrics;
     private final TransactionalOperator tx;
     private final Clock clock;
+    private final SlaPolicy sla;
 
     public RegisterPatientUseCase(PatientRepositoryPort patients, AuditRepositoryPort audits,
-            OutboxPort outbox, ClassificationMetricsPort metrics, TransactionalOperator tx, Clock clock) {
+            OutboxPort outbox, ClassificationMetricsPort metrics, TransactionalOperator tx, Clock clock,
+            SlaPolicy sla) {
         this.patients = patients;
         this.audits = audits;
         this.outbox = outbox;
         this.metrics = metrics;
         this.tx = tx;
         this.clock = clock;
+        this.sla = sla;
     }
 
     public Mono<Patient> register(RegisterPatientCommand command) {
@@ -38,8 +41,8 @@ public class RegisterPatientUseCase {
             Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
             TriageLevel level = TriageClassifier.classify(command.vitalSigns(), command.chiefComplaint());
             Patient patient = new Patient(UUID.randomUUID(), command.fullName(), command.age(),
-                    command.chiefComplaint(), command.vitalSigns(), level, PatientStatus.REGISTRADO,
-                    false, now, now, 1L);
+                    command.chiefComplaint(), command.vitalSigns(), level, sla.slaMinutes(level),
+                    PatientStatus.REGISTRADO, false, now, now, 1L);
             AuditEvent audit = new AuditEvent(UUID.randomUUID(), patient.id(), null,
                     PatientStatus.REGISTRADO, AuditEvent.PATIENT_REGISTERED, now);
             TriageEventEnvelope event = TriageEventEnvelope.of(AuditEvent.PATIENT_REGISTERED, patient.id(), 1L,

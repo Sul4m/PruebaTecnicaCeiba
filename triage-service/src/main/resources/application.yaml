@@ -37,6 +37,17 @@ triage:
     batch-size: 100
     max-attempts: 5
     max-backoff: 30s
+  escalation:
+    enabled: true
+    interval: 30s
+    batch-size: 100
+  sla:
+    minutes:
+      CRITICO: 5
+      URGENTE: 10
+      URGENTE_2: 30
+      NO_URGENTE: 60
+      NO_URGENTE_2: 120
 
 management:
   endpoints:

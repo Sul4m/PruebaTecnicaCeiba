@@ -16,3 +16,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-responder-consultas-citando-el-protocolo-del-corpus.md`
   summary: Calibrar el umbral de similitud con `text-embedding-3-small` real usando las tres consultas del baseline antes del despliegue, y exigir `SPRING_PROFILES_ACTIVE=azure` en los manifests.
   evidence: El umbral 0.30 solo está calibrado con el doble de embeddings de desarrollo; el perfil azure usa 0.45 provisional.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-5-escalar-por-sla-una-sola-vez.md`
+  summary: Verificar (con test) la anulación por variable de entorno del SLA de niveles con guion bajo (`TRIAGE_SLA_MINUTES_URGENTE_2`) o fijar los SLA en un archivo de propiedades montado desde el ConfigMap de la Story 1.6.
+  evidence: `SlaProperties` enlaza `Map<TriageLevel, Integer>`; solo se probaron las formas de archivo de propiedades y YAML, no la variable de entorno, que podría no enlazar la clave con guion bajo.
