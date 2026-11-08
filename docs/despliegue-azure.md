@@ -116,3 +116,13 @@ Valida la suscripción activa, el nombre y el tag del grupo, lista los recursos 
 - Los manifests contra un API server (`kubectl --dry-run` necesita un clúster; solo se renderizaron y se comprobó que el YAML parsea), la CRD `NginxIngressController`, la etiqueta DNS del balanceador y la emisión de certificados.
 - Conectividad real a Event Hubs (SASL_SSL, idempotencia), a PostgreSQL con TLS, y el stream SSE a través del ingress.
 - Los workflows de GitHub Actions (no se ejecutaron).
+
+## Lecciones del primer despliegue real (2026-11-08)
+
+- **Suscripciones nuevas restringen tamaños:** AKS solo aceptó tamaños v5/v6/v7 y B v2, y la cuota inicial de varias familias es 0. Se usó `Standard_D2s_v6` (cuota de `StandardDsv6Family`: 10). PostgreSQL Burstable no se aprobó en `eastus2`; se usó `GP_Standard_D2ds_v4` en la zona 2 (la zona 1 no está disponible). Valores en `variables.tf`.
+- **Un solo nodo de 2 vCPU no alcanza** (add-ons + cert-manager + ingress + Triage): `aks_node_count` vale 2.
+- **Contraseña de PostgreSQL efímera:** si un `apply` falla a medias y se repite, el secreto `db-password` de Key Vault y el servidor pueden quedar con valores distintos (cada ejecución genera una nueva). Síntoma: `password authentication failed`. Arreglo: fijar la misma contraseña en ambos (`az postgres flexible-server update --admin-password` y `az keyvault secret set --name db-password`) y reiniciar el pod. Pendiente: hacerlo idempotente.
+- **Imagen:** `az acr build` funciona en la suscripción (evita el problema arm64/amd64 de construir en Mac).
+- **ACME:** el `ClusterIssuer` se aplicó sin `email` (opcional en Let's Encrypt) para no enviar un correo personal.
+- **kubelogin:** instalar el de Azure (`az aks install-cli`), no el paquete homónimo de Homebrew (otro programa).
+- **Verificado:** HTTPS con certificado emitido, 401 sin API key, 404 para id inexistente, `POST /triage/pacientes` (E1) → 201 `CRITICO` SLA 5, SSE 200 sin cortes hasta el heartbeat (~15 s), productor Kafka conectado a Event Hubs con idempotencia.
