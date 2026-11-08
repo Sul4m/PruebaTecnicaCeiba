@@ -56,6 +56,14 @@ class SpringAiAnswerGeneratorTest {
     }
 
     @Test
+    void systemPromptInstructsTheNoProtocolTokenAndDirectAnswerOnly() {
+        assertThat(SpringAiAnswerGenerator.SYSTEM_PROMPT)
+                .contains("exactamente " + com.vidacruz.clinical_assistant_service.domain.ConsultaResultado.TOKEN_SIN_PROTOCOLO)
+                .contains("DIRECTAMENTE")
+                .contains("poblacion");
+    }
+
+    @Test
     void capsAnswerLength() {
         when(model.stream(any(Prompt.class))).thenReturn(Flux.just(chunk("x".repeat(100))));
 

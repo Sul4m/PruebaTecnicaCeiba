@@ -1,4 +1,7 @@
 spring:
+  reactor:
+    # Propaga el contexto de observacion (traceId/MDC) a los hilos de Reactor (scheduler de embeddings incluido).
+    context-propagation: auto
   application:
     name: clinical-assistant-service
   profiles:
@@ -44,6 +47,9 @@ logging:
       console: ecs
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0
   endpoint:
     health:
       probes:
@@ -51,7 +57,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,metrics
   endpoint.health.group:
     # Readiness: Kafka y Redis (la vista de urgencias depende de ambos); NO depende del proveedor LLM.
     readiness:

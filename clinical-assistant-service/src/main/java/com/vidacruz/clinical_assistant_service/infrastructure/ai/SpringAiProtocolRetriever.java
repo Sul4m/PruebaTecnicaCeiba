@@ -104,9 +104,15 @@ public class SpringAiProtocolRetriever implements ProtocolRetrievalPort {
                 .topK(props.topK())
                 .similarityThreshold(props.similarityThreshold())
                 .build();
-        return vectorStore.similaritySearch(request).stream()
+        List<RetrievedChunk> result = vectorStore.similaritySearch(request).stream()
                 .map(d -> new RetrievedChunk(fromDocument(d), d.getScore() == null ? 0.0 : d.getScore()))
                 .toList();
+        // Calibracion del umbral: solo ids y scores, nunca el texto de la pregunta.
+        log.info("RAG recuperacion: threshold={} topK={} resultados={} [{}]", props.similarityThreshold(),
+                props.topK(), result.size(), result.stream()
+                        .map(rc -> "%s#%s=%.3f".formatted(rc.chunk().protocolId(), rc.chunk().sectionId(), rc.score()))
+                        .collect(java.util.stream.Collectors.joining(", ")));
+        return result;
     }
 
     private Throwable toUnavailable(Throwable t) {

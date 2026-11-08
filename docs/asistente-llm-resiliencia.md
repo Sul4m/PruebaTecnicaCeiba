@@ -20,3 +20,9 @@ Metricas Micrometer (tag `operation` = `chat`|`embeddings`):
 - `assistant.llm.calls` (timer, tag `outcome` = success|error): latencia de llamadas al LLM.
 - `assistant.llm.failures` (counter, tag `reason` = timeout|error).
 - `assistant.llm.rejections` (counter, tag `reason` = circuit_open|bulkhead_full|scheduler_full).
+
+## Contrato del token `SIN_PROTOCOLO` (RN-05)
+
+El prompt del sistema ordena al modelo responder solo con los fragmentos y solo si responden directamente a la pregunta (mismo tema clínico y misma población; un protocolo pediátrico no responde sobre adultos). En cualquier otro caso debe emitir exactamente `SIN_PROTOCOLO`.
+
+`ConsultaProtocoloService` trata esa salida como abstención (comparación sin distinguir mayúsculas y tolerante a espacios y puntuación en los extremos), igual que una salida vacía o una cita a un protocolo no recuperado: devuelve `ConsultaResultado.AVISO_SIN_PROTOCOLO` con `fuentes: []`. El umbral de similitud sigue siendo el primer filtro; el token cubre los casos en que el recuperador devuelve fragmentos del tema equivocado. El contrato JSON no cambia.

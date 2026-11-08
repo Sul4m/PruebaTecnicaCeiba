@@ -31,6 +31,8 @@ dependencyManagement {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// Correlacion: traceId en cada log ECS (mismo patron que Triage).
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 	implementation 'org.springframework.kafka:spring-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
