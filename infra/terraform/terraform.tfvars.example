@@ -1,0 +1,5 @@
+# Copiar a terraform.tfvars (ignorado por Git). No contiene secretos.
+subscription_id   = "00000000-0000-0000-0000-000000000000"
+location          = "eastus2"
+suffix            = "demo01"
+github_repository = "owner/repo"

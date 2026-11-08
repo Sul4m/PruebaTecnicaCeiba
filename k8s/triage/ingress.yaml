@@ -1,0 +1,32 @@
+# Solo se publica /triage (no /actuator). Anotaciones pensadas para SSE (/triage/alertas/stream):
+# sin buffering de respuesta y timeouts de lectura/escritura de 1 h para no cortar el stream entre
+# heartbeats. Controlador: ver k8s/platform/ingress-controller.yaml. TLS: cert-manager + Let's Encrypt.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: triage
+  namespace: triage
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+spec:
+  ingressClassName: nginx-triage
+  tls:
+    - hosts:
+        - "${INGRESS_HOST}"
+      secretName: triage-tls
+  rules:
+    - host: "${INGRESS_HOST}"
+      http:
+        paths:
+          - path: /triage
+            pathType: Prefix
+            backend:
+              service:
+                name: triage
+                port:
+                  name: http

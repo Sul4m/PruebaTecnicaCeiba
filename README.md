@@ -7,7 +7,7 @@ Backend reactivo para el triaje de urgencias de VidaCruz: dos microservicios Jav
 ## Estado
 
 - Local: Triage (registro, estados, SLA/escalamiento, auditoría, reporte, alertas SSE) y Asistente (RAG, abstención, resiliencia LLM, estado de urgencias) implementados; ejecución integrada con Docker Compose.
-- Azure (AKS, Terraform, CI/CD, Key Vault): **pendiente de despliegue** (Stories 1.6, 3.4 y parte Azure de 4.4). Ver [URLs de Azure](#urls-de-azure).
+- Azure (AKS, Terraform, CI/CD, Key Vault): **código de la Story 1.6 listo, no desplegado** ([guía](docs/despliegue-azure.md)); pendiente de despliegue (Stories 1.6, 3.4 y parte Azure de 4.4). Ver [URLs de Azure](#urls-de-azure).
 
 ## Ejecución local (un solo comando)
 

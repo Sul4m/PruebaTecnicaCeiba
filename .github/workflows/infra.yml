@@ -1,0 +1,95 @@
+name: infra
+
+# Terraform solo cuando cambia infra/. Plan en PR; apply en la rama protegida (con aprobación del
+# environment `azure-infra`). Autenticación OIDC con la identidad id-gh-terraform-<sufijo>.
+# Variables de Actions (no secretas): AZURE_TF_CLIENT_ID (ci_terraform_client_id), AZURE_TENANT_ID,
+# AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, SUFFIX, TFSTATE_RG, TFSTATE_STORAGE_ACCOUNT.
+
+on:
+  pull_request:
+    paths: ["infra/**", ".github/workflows/infra.yml"]
+  push:
+    branches: [master]
+    paths: ["infra/**", ".github/workflows/infra.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_TF_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_location: ${{ vars.AZURE_LOCATION }}
+  TF_VAR_suffix: ${{ vars.SUFFIX }}
+  TF_VAR_github_repository: ${{ github.repository }}
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.11"
+      - name: init
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=pruebatecnicaceiba.tfstate" \
+            -backend-config="use_azuread_auth=true"
+      - name: fmt / validate
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+      - name: plan
+        working-directory: infra/terraform
+        run: terraform plan -input=false -out=tfplan
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: tfplan
+          path: infra/terraform/tfplan # el plan no contiene secretos: las contraseñas son efímeras/write-only
+          retention-days: 1
+
+  apply:
+    if: github.event_name == 'push'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: azure-infra
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: infra/terraform
+      - name: init y apply del plan guardado
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RG }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=pruebatecnicaceiba.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform apply -input=false tfplan

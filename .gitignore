@@ -19,3 +19,11 @@ _bmad/custom/config.user.toml
 # Local destructive Azure teardown helper (never commit)
 .local/destroy-azure-resources.sh
 
+
+# Local destructive Azure teardown (use scripts/destroy-azure.sh.example as template)
+scripts/destroy-azure.sh
+
+# Terraform local values (no secrets, but environment specific)
+*.tfvars
+!*.tfvars.example
+backend.hcl

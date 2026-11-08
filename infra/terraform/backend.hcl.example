@@ -1,0 +1,6 @@
+# Copiar a backend.hcl (ignorado por Git) y completar con la salida de scripts/bootstrap-tfstate.sh
+resource_group_name  = "<rg-del-estado>"
+storage_account_name = "<cuenta-de-almacenamiento>"
+container_name       = "tfstate"
+key                  = "pruebatecnicaceiba.tfstate"
+use_azuread_auth     = true
