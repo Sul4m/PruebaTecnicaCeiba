@@ -1,6 +1,7 @@
 package com.vidacruz.triage_service.infrastructure.config;
 
 import com.vidacruz.triage_service.application.AlertRepositoryPort;
+import com.vidacruz.triage_service.application.AlertStreamService;
 import com.vidacruz.triage_service.application.AuditRepositoryPort;
 import com.vidacruz.triage_service.application.ChangePatientStatusUseCase;
 import com.vidacruz.triage_service.application.ClassificationMetricsPort;
@@ -25,7 +26,8 @@ import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
 
 @Configuration
-@EnableConfigurationProperties({SecurityProperties.class, SlaProperties.class, EscalationProperties.class})
+@EnableConfigurationProperties({SecurityProperties.class, SlaProperties.class, EscalationProperties.class,
+        AlertStreamProperties.class})
 class BeanConfig {
 
     @Bean
@@ -67,6 +69,11 @@ class BeanConfig {
     @Bean
     GetAlertsUseCase getAlertsUseCase(AlertRepositoryPort alerts) {
         return new GetAlertsUseCase(alerts);
+    }
+
+    @Bean
+    AlertStreamService alertStreamService(AlertRepositoryPort alerts, AlertStreamProperties props) {
+        return new AlertStreamService(alerts, props.pollInterval(), props.batchSize());
     }
 
     @Bean

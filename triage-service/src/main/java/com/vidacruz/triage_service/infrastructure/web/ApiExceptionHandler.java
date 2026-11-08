@@ -12,6 +12,7 @@ import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -74,11 +75,12 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler(InvalidReportParameterException.class)
-    ProblemDetail handleInvalidReportParameter(InvalidReportParameterException ex) {
+    ResponseEntity<ProblemDetail> handleInvalidReportParameter(InvalidReportParameterException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problem.setTitle("Solicitud inválida");
         problem.setProperty("campo", ex.parameter());
-        return problem;
+        // Explícito: el stream SSE produce text/event-stream y el error no debe codificarse como evento.
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem);
     }
 
     @ExceptionHandler(PatientNotFoundException.class)
