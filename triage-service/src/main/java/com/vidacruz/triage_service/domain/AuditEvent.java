@@ -12,4 +12,6 @@ public record AuditEvent(
         Instant occurredAt) {
 
     public static final String PATIENT_REGISTERED = "paciente_registrado";
+    public static final String PATIENT_IN_CONSULTATION = "paciente_en_consulta";
+    public static final String PATIENT_DISCHARGED = "paciente_alta";
 }
