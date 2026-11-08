@@ -5,6 +5,39 @@ spring:
     # Sin perfil explicito se usa `dev` (dobles locales, sin credenciales). En despliegue activar `azure`.
     default: dev
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+      timeout: 2s
+      connect-timeout: 2s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    admin:
+      operation-timeout: 5s
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        max.poll.records: 100
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 15000
+    listener:
+      # Con listener que devuelve Mono el offset se confirma al completar el Mono (despues de Redis).
+      ack-mode: manual
+
 logging:
   structured:
     format:
@@ -19,8 +52,20 @@ management:
     web:
       exposure:
         include: health
+  endpoint.health.group:
+    # Readiness: Kafka y Redis (la vista de urgencias depende de ambos); NO depende del proveedor LLM.
+    readiness:
+      include: readinessState,redis,kafka
 
 assistant:
+  projection:
+    enabled: ${ASISTENTE_PROJECTION_ENABLED:true}
+    topic: triaje.eventos
+    dlt-topic: triaje.eventos.dlt
+    group-id: ${ASISTENTE_KAFKA_GROUP_ID:clinical-assistant-urgencias}
+    max-attempts: 5
+    retry-backoff: 200ms
+    retry-max-backoff: 5s
   security:
     # Clave propia del Asistente (NO compartida con Triage). Solo por entorno; sin valor por defecto.
     api-key: ${ASISTENTE_API_KEY:}
