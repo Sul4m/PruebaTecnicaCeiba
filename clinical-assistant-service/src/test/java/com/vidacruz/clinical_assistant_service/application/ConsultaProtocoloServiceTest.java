@@ -29,7 +29,11 @@ class ConsultaProtocoloServiceTest {
     private final ConsultaProtocoloService service = new ConsultaProtocoloService(retrieval, generation);
 
     private static RetrievedChunk chunk(String proto, String section) {
-        return new RetrievedChunk(new ProtocolChunk(proto, "t", section.toLowerCase(), section, "v1", "cuerpo"), 0.9);
+        return chunk(proto, section, "Medir la presion arterial en reposo. Administrar antibiotico en la primera hora.");
+    }
+
+    private static RetrievedChunk chunk(String proto, String section, String body) {
+        return new RetrievedChunk(new ProtocolChunk(proto, "t", section.toLowerCase(), section, "v1", body), 0.9);
     }
 
     @Test
@@ -48,9 +52,12 @@ class ConsultaProtocoloServiceTest {
     @Test
     void sourcesComeFromRetrievedMetadataNotFromModelText() {
         when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(
-                chunk("PROTO-001", "Medidas iniciales"), chunk("PROTO-001", "Medidas iniciales"),
-                chunk("PROTO-001", "Definición"))));
-        when(generation.generate(any(), any())).thenReturn(Mono.just("Segun PROTO-001, medir la presion."));
+                chunk("PROTO-001", "Medidas iniciales", "Medir la presion arterial en reposo."),
+                chunk("PROTO-001", "Medidas iniciales", "Medir la presion arterial en reposo."),
+                chunk("PROTO-001", "Definición", "Presion arterial elevada con dano de organo."),
+                chunk("PROTO-001", "Contraindicaciones", "Nifedipino sublingual."))));
+        when(generation.generate(any(), any()))
+                .thenReturn(Mono.just("Segun PROTO-001, medir la presion arterial elevada en reposo."));
 
         StepVerifier.create(service.consultar("q"))
                 .assertNext(r -> {
@@ -130,6 +137,20 @@ class ConsultaProtocoloServiceTest {
 
         StepVerifier.create(service.consultar("q"))
                 .assertNext(r -> assertThat(r.fuentes()).isEmpty())
+                .verifyComplete();
+    }
+
+    @Test
+    void answerWithoutLexicalSupportAbstainsEvenWithSources() {
+        when(retrieval.retrieve(any())).thenReturn(Mono.just(List.of(chunk("PROTO-001", "Medidas iniciales"))));
+        when(generation.generate(any(), any())).thenReturn(Mono.just(
+                "No hay información en los fragmentos sobre el manejo de un infarto agudo de miocardio."));
+
+        StepVerifier.create(service.consultar("infarto"))
+                .assertNext(r -> {
+                    assertThat(r.respuesta()).isEqualTo(ConsultaResultado.AVISO_SIN_PROTOCOLO);
+                    assertThat(r.fuentes()).isEmpty();
+                })
                 .verifyComplete();
     }
 
