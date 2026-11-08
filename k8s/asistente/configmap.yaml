@@ -1,0 +1,20 @@
+# Solo valores NO secretos. Los secretos llegan desde Key Vault (secretproviderclass.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asistente-config
+  namespace: asistente
+data:
+  SPRING_PROFILES_ACTIVE: "azure"
+  SERVER_PORT: "8081"
+  KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS}"
+  # Debe coincidir con el consumer group creado por Terraform (var.asistente_consumer_group).
+  ASISTENTE_KAFKA_GROUP_ID: "clinical-assistant-urgencias"
+  REDIS_HOST: "${REDIS_HOST}"
+  REDIS_PORT: "10000"
+  AZURE_OPENAI_ENDPOINT: "${AZURE_OPENAI_ENDPOINT}"
+  AZURE_OPENAI_CHAT_DEPLOYMENT: "gpt-5.4-mini"
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "text-embedding-3-small"
+  # Provisional hasta calibrar con text-embedding-3-small real (deferred-work.md).
+  ASISTENTE_RAG_THRESHOLD: "${ASISTENTE_RAG_THRESHOLD}"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -XX:+ExitOnOutOfMemoryError"

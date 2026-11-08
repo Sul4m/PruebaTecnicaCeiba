@@ -68,3 +68,25 @@ output "ci_terraform_apply_client_id" {
 output "ci_terraform_plan_client_id" {
   value = try(azurerm_user_assigned_identity.ci_terraform_plan[0].client_id, null)
 }
+
+output "redis_name" {
+  value = azurerm_managed_redis.main.name
+}
+
+output "redis_host" {
+  description = "Hostname de Azure Managed Redis (TLS en el puerto 10000)."
+  value       = azurerm_managed_redis.main.hostname
+}
+
+output "openai_endpoint" {
+  description = "Endpoint (subdominio propio, requerido para autenticación Entra) de Azure OpenAI."
+  value       = azurerm_cognitive_account.openai.endpoint
+}
+
+output "openai_account_name" {
+  value = azurerm_cognitive_account.openai.name
+}
+
+output "asistente_workload_client_id" {
+  value = azurerm_user_assigned_identity.workload["asistente"].client_id
+}
