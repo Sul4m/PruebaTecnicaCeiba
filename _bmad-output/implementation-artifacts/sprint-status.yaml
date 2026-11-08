@@ -58,6 +58,6 @@ development_status:
   epic-4: in-progress
   4-1-responder-consultas-citando-el-protocolo-del-corpus: review
   4-2-abstenerse-cuando-no-existe-protocolo: review
-  4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: backlog
+  4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: review
   4-4-entregar-la-solución-integrada-y-documentada: backlog
   epic-4-retrospective: optional

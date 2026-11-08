@@ -34,10 +34,16 @@ public class SpringAiAnswerGenerator implements AnswerGenerationPort {
 
     private final ChatClient chatClient;
     private final AssistantRagProperties props;
+    private final LlmGuard guard;
 
     public SpringAiAnswerGenerator(ChatClient chatClient, AssistantRagProperties props) {
+        this(chatClient, props, LlmGuard.disabled());
+    }
+
+    public SpringAiAnswerGenerator(ChatClient chatClient, AssistantRagProperties props, LlmGuard guard) {
         this.chatClient = chatClient;
         this.props = props;
+        this.guard = guard;
     }
 
     @Override
@@ -48,7 +54,7 @@ public class SpringAiAnswerGenerator implements AnswerGenerationPort {
                 .collect(Collectors.joining("\n"));
         String user = "FRAGMENTOS:\n" + fragments + "\n\nPREGUNTA:\n<pregunta>" + escape(question) + "</pregunta>";
 
-        return chatClient.prompt()
+        Mono<String> call = chatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .user(user)
                 .stream()
@@ -58,7 +64,9 @@ public class SpringAiAnswerGenerator implements AnswerGenerationPort {
                 .map(String::strip)
                 .filter(s -> !s.isEmpty())
                 .map(this::cap)
-                .timeout(props.llmTimeout())
+                .timeout(props.llmTimeout());
+        // Bulkhead + circuit breaker + metricas; todo fallo del proveedor termina en AssistantUnavailableException.
+        return guard.protect(LlmGuard.CHAT, call)
                 .onErrorMap(t -> !(t instanceof AssistantUnavailableException), t -> {
                     log.warn("Generacion no disponible ({})", t.getClass().getSimpleName());
                     return new AssistantUnavailableException("fallo del proveedor de chat", t);
