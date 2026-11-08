@@ -1,10 +1,12 @@
 package com.vidacruz.triage_service.infrastructure.config;
 
+import com.vidacruz.triage_service.application.AlertRepositoryPort;
 import com.vidacruz.triage_service.application.AuditRepositoryPort;
 import com.vidacruz.triage_service.application.ChangePatientStatusUseCase;
 import com.vidacruz.triage_service.application.ClassificationMetricsPort;
 import com.vidacruz.triage_service.application.EscalateOverduePatientsUseCase;
 import com.vidacruz.triage_service.application.EscalationMetricsPort;
+import com.vidacruz.triage_service.application.GetAlertsUseCase;
 import com.vidacruz.triage_service.application.GetOperationsReportUseCase;
 import com.vidacruz.triage_service.application.GetPatientUseCase;
 import com.vidacruz.triage_service.application.OperationsReportPort;
@@ -51,14 +53,20 @@ class BeanConfig {
 
     @Bean
     EscalateOverduePatientsUseCase escalateOverduePatientsUseCase(PatientRepositoryPort patients,
-            AuditRepositoryPort audits, OutboxPort outbox, EscalationMetricsPort metrics, TransactionalOperator tx,
-            Clock clock, EscalationProperties props) {
-        return new EscalateOverduePatientsUseCase(patients, audits, outbox, metrics, tx, clock, props.batchSize());
+            AuditRepositoryPort audits, OutboxPort outbox, AlertRepositoryPort alerts,
+            EscalationMetricsPort metrics, TransactionalOperator tx, Clock clock, EscalationProperties props) {
+        return new EscalateOverduePatientsUseCase(patients, audits, outbox, alerts, metrics, tx, clock,
+                props.batchSize());
     }
 
     @Bean
     GetOperationsReportUseCase getOperationsReportUseCase(OperationsReportPort report) {
         return new GetOperationsReportUseCase(report);
+    }
+
+    @Bean
+    GetAlertsUseCase getAlertsUseCase(AlertRepositoryPort alerts) {
+        return new GetAlertsUseCase(alerts);
     }
 
     @Bean

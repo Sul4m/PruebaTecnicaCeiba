@@ -3,6 +3,7 @@ package com.vidacruz.triage_service.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.vidacruz.triage_service.PostgresTestSupport;
+import com.vidacruz.triage_service.application.AlertRepositoryPort;
 import com.vidacruz.triage_service.application.AuditRepositoryPort;
 import com.vidacruz.triage_service.application.EscalateOverduePatientsUseCase;
 import com.vidacruz.triage_service.application.EscalationMetricsPort;
@@ -41,6 +42,7 @@ class EscalationSlaConfigIntegrationTest extends PostgresTestSupport {
     @Autowired PatientRepositoryPort patients;
     @Autowired AuditRepositoryPort audits;
     @Autowired OutboxPort outbox;
+    @Autowired AlertRepositoryPort alerts;
     @Autowired EscalationMetricsPort metrics;
     @Autowired TransactionalOperator tx;
 
@@ -49,6 +51,7 @@ class EscalationSlaConfigIntegrationTest extends PostgresTestSupport {
     @AfterEach
     void cleanUp() {
         if (created != null) {
+            db.sql("DELETE FROM medical_alert WHERE patient_id = :id").bind("id", created).fetch().rowsUpdated().block();
             db.sql("DELETE FROM outbox_event WHERE aggregate_id = :id").bind("id", created).fetch().rowsUpdated().block();
             db.sql("DELETE FROM audit_event WHERE patient_id = :id").bind("id", created).fetch().rowsUpdated().block();
             db.sql("DELETE FROM patient WHERE id = :id").bind("id", created).fetch().rowsUpdated().block();
@@ -84,7 +87,7 @@ class EscalationSlaConfigIntegrationTest extends PostgresTestSupport {
     }
 
     private EscalateOverduePatientsUseCase useCase(Instant now) {
-        return new EscalateOverduePatientsUseCase(patients, audits, outbox, metrics, tx,
+        return new EscalateOverduePatientsUseCase(patients, audits, outbox, alerts, metrics, tx,
                 Clock.fixed(now, ZoneOffset.UTC), 100);
     }
 }
