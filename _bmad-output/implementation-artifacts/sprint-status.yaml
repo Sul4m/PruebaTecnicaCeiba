@@ -55,10 +55,10 @@ development_status:
   3-4-exponer-el-asistente-clínico-en-azure: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
+  epic-4: done
   4-1-responder-consultas-citando-el-protocolo-del-corpus: done
   4-2-abstenerse-cuando-no-existe-protocolo: done
   4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: done
-  4-4-entregar-la-solución-integrada-y-documentada: in-progress
+  4-4-entregar-la-solución-integrada-y-documentada: done
   4-5-puerta-e2e-con-curl-bdd-y-mbt: done
   epic-4-retrospective: optional
