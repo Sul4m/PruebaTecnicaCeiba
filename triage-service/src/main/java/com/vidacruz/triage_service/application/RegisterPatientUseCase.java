@@ -1,0 +1,49 @@
+package com.vidacruz.triage_service.application;
+
+import com.vidacruz.triage_service.domain.AuditEvent;
+import com.vidacruz.triage_service.domain.Patient;
+import com.vidacruz.triage_service.domain.PatientStatus;
+import com.vidacruz.triage_service.domain.TriageClassifier;
+import com.vidacruz.triage_service.domain.TriageLevel;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Mono;
+
+public class RegisterPatientUseCase {
+
+    private final PatientRepositoryPort patients;
+    private final AuditRepositoryPort audits;
+    private final ClassificationMetricsPort metrics;
+    private final TransactionalOperator tx;
+    private final Clock clock;
+
+    public RegisterPatientUseCase(PatientRepositoryPort patients, AuditRepositoryPort audits,
+            ClassificationMetricsPort metrics, TransactionalOperator tx, Clock clock) {
+        this.patients = patients;
+        this.audits = audits;
+        this.metrics = metrics;
+        this.tx = tx;
+        this.clock = clock;
+    }
+
+    public Mono<Patient> register(RegisterPatientCommand command) {
+        return Mono.defer(() -> {
+            // Microsegundos: precisión de timestamptz, para que la respuesta coincida con lo persistido.
+            Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+            TriageLevel level = TriageClassifier.classify(command.vitalSigns(), command.chiefComplaint());
+            Patient patient = new Patient(UUID.randomUUID(), command.fullName(), command.age(),
+                    command.chiefComplaint(), command.vitalSigns(), level, PatientStatus.REGISTRADO,
+                    false, now, now);
+            AuditEvent audit = new AuditEvent(UUID.randomUUID(), patient.id(), null,
+                    PatientStatus.REGISTRADO, AuditEvent.PATIENT_REGISTERED, now);
+            return patients.save(patient)
+                    .then(audits.save(audit))
+                    .thenReturn(patient)
+                    .as(tx::transactional)
+                    .doOnNext(saved -> metrics.recordClassification(saved.level()));
+        });
+    }
+}
