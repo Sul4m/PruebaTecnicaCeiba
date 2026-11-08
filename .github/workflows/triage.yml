@@ -7,7 +7,7 @@ name: deploy
 #   (job deploy usa environment `azure`) AZURE_CLIENT_ID (ci_deploy_client_id), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME,
 #   AKS_NAME, RESOURCE_GROUP, KV_NAME, TRIAGE_WORKLOAD_CLIENT_ID, DB_HOST, DB_USER,
 #   KAFKA_BOOTSTRAP_SERVERS, INGRESS_HOST, ASISTENTE_WORKLOAD_CLIENT_ID, REDIS_HOST,
-#   AZURE_OPENAI_ENDPOINT   (salidas de `terraform output`);  opcional: ASISTENTE_RAG_THRESHOLD (defecto 0.45)
+#   AZURE_OPENAI_ENDPOINT   (salidas de `terraform output`);  opcional: ASISTENTE_RAG_THRESHOLD (defecto 0.55)
 
 on:
   pull_request:
@@ -54,7 +54,7 @@ jobs:
           ASISTENTE_WORKLOAD_CLIENT_ID: 00000000-0000-0000-0000-000000000000
           REDIS_HOST: redis.example.net
           AZURE_OPENAI_ENDPOINT: https://example.openai.azure.com/
-          ASISTENTE_RAG_THRESHOLD: "0.45"
+          ASISTENTE_RAG_THRESHOLD: "0.55"
         run: |
           scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage k8s/asistente k8s/platform
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
@@ -158,7 +158,7 @@ jobs:
           REDIS_HOST: ${{ vars.REDIS_HOST }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           # Provisional hasta calibrar con el embedding real (deferred-work.md).
-          ASISTENTE_RAG_THRESHOLD: ${{ vars.ASISTENTE_RAG_THRESHOLD || '0.45' }}
+          ASISTENTE_RAG_THRESHOLD: ${{ vars.ASISTENTE_RAG_THRESHOLD || '0.55' }}
           INGRESS_DNS_LABEL: unused
           ACME_EMAIL: unused
         run: |

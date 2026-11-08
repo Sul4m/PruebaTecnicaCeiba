@@ -103,7 +103,7 @@ La entrega es al menos una vez (el cliente deduplica por `alertId`). SSE no cubr
 - **SLA y escalamiento:** escala solo en `REGISTRADO` cuando el tiempo desde el registro supera estrictamente el SLA; una sola vez. El SLA se congela en `patient.sla_minutes` al registrar. Intervalo (`triage.escalation.interval`, defecto 30 s) y SLA (`triage.sla.minutes.*`) son configurables. Anular los SLA de `URGENTE_2`/`NO_URGENTE_2` por variable de entorno no está verificado; usar archivo de propiedades.
 - **RF-05:** instantes en UTC, rango `[desde, hasta)`, bucket por hora de registro; los pacientes sin entrada a consulta cuentan en total y por nivel pero no en promedio/p95 (que no se imputan). Fechas sin offset se interpretan como UTC.
 - **Autenticación:** API key por servicio en `X-API-Key` (no JWT): sin identidad individual ni roles; ver ADR-0008. `/actuator/health/**` es público.
-- **Vector store y embeddings:** `SimpleVectorStore` en memoria con corpus versionado (`corpus/v1`) y `text-embedding-3-small`. El umbral de similitud (0.30 con los dobles de desarrollo, 0.45 provisional en `azure`) debe calibrarse con el modelo real.
+- **Vector store y embeddings:** `SimpleVectorStore` en memoria con corpus versionado (`corpus/v1`) y `text-embedding-3-small`. El umbral de similitud (0.30 con los dobles de desarrollo, 0.55 en `azure`, calibrado con el modelo real: legítimas >= 0.618, irrelevantes <= 0.503).
 - **Abstención (RN-05):** sin coincidencia relevante se devuelve solo el aviso fijo (HTTP 200), sin invocar al modelo. Las fuentes provienen de la metadata del corpus.
 - **Fallo del LLM:** HTTP 503 (ProblemDetail) sin detalle del proveedor; `estado-urgencias` no se ve afectado.
 - **Proyección Redis:** Redis de un solo nodo; reconstruible por replay dentro de la retención del topic.
@@ -116,7 +116,7 @@ La entrega es al menos una vez (el cliente deduplica por `alertId`). SSE no cubr
 - **Relay del outbox de una sola réplica:** `OutboxRelay` no usa bloqueo entre réplicas; Kubernetes despliega Triage con `replicas: 1` y estrategia `Recreate`.
 - **Auditoría inmutable por ausencia de endpoints:** no existen endpoints de modificación ni borrado, pero la base de datos no impone inmutabilidad (no hay trigger).
 - **Correlación de procesos de fondo de Triage:** el scheduler de escalamiento y el relay del outbox registran logs sin `traceId` (no nacen de una petición HTTP).
-- **Umbral RAG por calibrar:** `ASISTENTE_RAG_THRESHOLD` (0.45 en Azure) es provisional; el Asistente registra a nivel INFO los ids y scores recuperados para calibrarlo con el modelo real.
+- **Umbral RAG:** `ASISTENTE_RAG_THRESHOLD` (0.55 en Azure) se calibró el 2026-11-08 con `text-embedding-3-small` real: consultas legítimas puntúan >= 0.618 e irrelevantes <= 0.503. Los casos intermedios (0.58-0.59, p. ej. hipertensión crónica) los cubren el prompt (token `SIN_PROTOCOLO`) y la validación léxica `RespuestaSustentada`. El Asistente registra a nivel INFO los ids y scores recuperados para recalibrar si cambia el modelo o el corpus.
 
 ## Pruebas
 
