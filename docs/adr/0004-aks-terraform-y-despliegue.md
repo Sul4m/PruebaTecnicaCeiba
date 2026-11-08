@@ -12,13 +12,16 @@ Los entregables obligatorios incluyen una URL de la aplicación desplegada en Az
 
 Desplegar ambas aplicaciones en Azure Kubernetes Service (AKS), administrar recursos de Azure con Terraform y versionar los manifests Kubernetes. Usar una canalización de CI/CD del repositorio para construir imágenes, publicarlas en Azure Container Registry y aplicar los manifests al clúster. La canalización publicará/verificará las URLs de las APIs. Terraform provisiona infraestructura; no sustituye el build ni el despliegue de las aplicaciones.
 
+Todos los recursos de la prueba se crean en un grupo de recursos dedicado y etiquetado `project=PruebaTecnicaCeiba`, sin incorporar recursos compartidos. Después de la evaluación se elimina el grupo completo con el script local ignorado por Git; el usuario revisa el inventario y confirma escribiendo el nombre exacto del grupo. La ejecución de limpieza también elimina los servicios gestionados del ejercicio y no forma parte de CI/CD.
+
 ## Consecuencias
 
 - Los manifests requeridos son los artefactos que despliegan los servicios en el destino elegido.
 - Terraform deja reproducibles los recursos de nube y permite declarar infraestructura en el repositorio.
-- AKS requiere configurar acceso al clúster, red, secretos y un backend seguro para el estado Terraform; el costo del clúster debe controlarse y su eliminación tras la evaluación debe documentarse.
+- AKS requiere configurar acceso al clúster, red, secretos y un backend para el estado Terraform. El entorno se crea en la suscripción del usuario y se elimina al concluir la evaluación.
+- El grupo dedicado permite borrar el entorno temporal después de la revisión técnica sin depender de conservar infraestructura o estado Terraform.
 - URL pública implica limitar exposición a las rutas necesarias, aplicar autenticación y no publicar credenciales ni servicios internos.
-- La región, SKU, topología de red y backend de estado se fijarán cuando se conozcan suscripción, cuotas y disponibilidad; no se crean recursos Azure durante esta decisión documental.
+- Terraform parametriza suscripción, región y tamaño necesario del clúster para la prueba; estos valores se pasan al aplicar en la cuenta del usuario y no son bloqueos de diseño. No se crean recursos Azure durante esta decisión documental.
 
 ## Alternativa descartada
 

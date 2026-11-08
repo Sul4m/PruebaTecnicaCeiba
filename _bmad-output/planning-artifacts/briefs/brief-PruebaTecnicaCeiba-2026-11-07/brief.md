@@ -54,9 +54,12 @@ El valor que se busca demostrar es consistencia y trazabilidad del flujo, junto 
 - La priorización de RN-01 es por gravedad: niveles 1-3 primero; solo si ninguno aplica, queja administrativa produce nivel 5, de lo contrario nivel 4.
 - RF-06 queda resuelto para esta prueba con un flujo SSE autenticado y alertas persistidas consultables; ver [ADR-0002](../../../../docs/adr/0002-alertas-medicas-sse.md).
 - El destino decidido es AKS, coherente con los manifests Kubernetes pedidos. Terraform aprovisiona infraestructura; el flujo de CI/CD construirá/publicará imágenes y desplegará manifests. El enunciado exige URL accesible en Azure, por lo que el despliegue funcional es parte del entregable. Ver [ADR-0004](../../../../docs/adr/0004-aks-terraform-y-despliegue.md).
-- Spring AI y GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry quedan seleccionados. Vector store, embeddings, formato/versionado de eventos, estrategia ante indisponibilidad de Kafka y autenticación siguen pendientes de diseño.
+- Spring AI con `SimpleVectorStore` y `text-embedding-3-small`, y GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry quedan seleccionados. También quedaron definidos contrato JSON versionado con outbox e idempotencia, API key por servicio, semántica de RF-05 y estrategia ante la indisponibilidad de Kafka. Ver [diseño global](../../architecture/solution-design-PruebaTecnicaCeiba.md), [ADR-0003](../../../../docs/adr/0003-spring-ai-y-modelo-openai.md) y [ADR-0005](../../../../docs/adr/0005-outbox-y-contrato-kafka.md).
 - La arquitectura elegida es hexagonal liviana por microservicio; sus límites y consecuencias están en [ADR-0001](../../../../docs/adr/0001-arquitectura-hexagonal.md).
-- RF-05 debe concretar límites temporales y el tratamiento de pacientes sin primera consulta antes de cerrar criterios de aceptación.
+- RF-05 queda fijado en UTC, rango `[desde,hasta)`, agrupación por hora de registro y exclusión de pacientes sin consulta únicamente de promedio/p95; las agregaciones se calculan en PostgreSQL. El diseño describe la semántica completa.
+- El despliegue de evaluación usará un grupo de recursos Azure dedicado y etiquetado a esta prueba. Tras la revisión técnica, se podrá eliminar con un script local ignorado por Git; no se reutilizarán recursos compartidos.
+
+El despliegue se hará en la suscripción Azure del usuario. Suscripción y región se suministran como variables de Terraform para crear el entorno temporal de evaluación y eliminarlo al terminar; no son decisiones abiertas del producto ni requisitos de una plataforma de producción.
 
 ## Visión
 

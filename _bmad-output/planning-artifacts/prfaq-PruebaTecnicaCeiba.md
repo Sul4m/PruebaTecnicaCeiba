@@ -27,7 +27,7 @@ La propuesta digitaliza el flujo solicitado para evaluación: niveles y SLA defi
 1. Enfermería registra nombre, edad, signos vitales y queja principal mediante la API de Triage.
 2. El servicio valida los datos, clasifica según la regla de negocio, asigna SLA y publica el evento de registro.
 3. El flujo permite las transiciones clínicas especificadas; el sistema guarda auditoría y escala una sola vez a quien exceda su SLA mientras siga `REGISTRADO`.
-4. El Asistente consume eventos para mantener el conteo de pacientes activos por nivel. El personal médico puede consultar protocolos: Spring AI usa GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry y la respuesta incluye protocolo y sección, o indica que no hay uno disponible.
+4. El Asistente consume eventos Kafka y mantiene en Redis la proyección de pacientes activos por nivel sin consultar la API de Triage. Para RAG usa Spring AI, `SimpleVectorStore` y `text-embedding-3-small`; GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry redacta con fragmentos recuperados y cita protocolo/sección, o se abstiene.
 5. Si el proveedor LLM falla, la consulta del Asistente devuelve HTTP 503 con mensaje claro; la operación de Triage no depende del Asistente.
 6. Cuando Triage escala un paciente, publica el evento Kafka y emite una alerta por SSE. Las alertas quedan persistidas y pueden consultarse después de una desconexión.
 
@@ -56,7 +56,7 @@ El Asistente responde HTTP 503 con un mensaje claro. La clasificación, registro
 
 ### ¿El Asistente llama al servicio Triage para mostrar la urgencia actual?
 
-No. Debe reconstruir esa vista consumiendo el topic `triaje.eventos` y persistir el conteo de pacientes activos por nivel en Redis o una base NoSQL.
+No. Reconstruye esa vista consumiendo el topic `triaje.eventos` y persiste la proyección en Redis. Los eventos incluyen un snapshot mínimo completo, versión por paciente e idempotencia para mantener conteos correctos; el servicio no llama a Triage.
 
 ### ¿Esto está listo para usarse con pacientes reales?
 
@@ -64,7 +64,7 @@ No se puede afirmar eso a partir del enunciado. El alcance es una prueba técnic
 
 ### ¿Qué pasa con la seguridad y los datos personales?
 
-La prueba exige autenticación con JWT o API key, validación de entradas y secretos fuera del código. El mecanismo concreto, los controles de privacidad, la retención y el entorno asistencial no están definidos y deben quedar fuera de cualquier afirmación de producción.
+La prueba exige autenticación con JWT o API key, validación de entradas y secretos fuera del código. El diseño elige una API key independiente por servicio, secretos en variables de entorno localmente y Azure Key Vault con Workload ID en AKS. Esto es suficiente para la demostración; controles de privacidad, retención y entorno asistencial siguen fuera de cualquier afirmación de producción.
 
 ### ¿Cómo se entera el equipo médico de un escalamiento?
 
@@ -76,23 +76,23 @@ Triage ofrece un flujo SSE autenticado para alertas y un endpoint de consulta pa
 
 ### ¿El enunciado es suficiente para empezar a implementar sin análisis adicional?
 
-Es suficiente para delimitar capacidades y muchas reglas, pero no para resolver todas las decisiones. Ya se eligieron canal RF-06, arquitectura, Spring AI/modelo y destino AKS/Terraform. Siguen abiertos el formato de eventos, políticas de reintento/reprocesamiento, autenticación, vector store/embeddings y varios detalles del reporte. Esos vacíos deben resolverse durante diseño; no se rellenan silenciosamente.
+El enunciado delimita las capacidades y reglas; las decisiones necesarias para diseñar antes del build ya están documentadas en el diseño global y ADR. Esto incluye arquitectura hexagonal, SSE persistido para RF-06, AKS/Terraform, API key, contrato Kafka versionado con outbox, recuperación/idempotencia de Redis, estrategia RAG y semántica RF-05. El contrato OpenAPI detallado y parámetros ajustables de operación se concretarán durante planificación/implementación sin alterar esas decisiones.
 
 ### ¿Qué se desplegará y cómo?
 
-La entrega incluye una URL de las APIs desplegadas y accesibles en Azure, además de manifests Kubernetes e IaC. Se eligió AKS para desplegar los manifests y Terraform para aprovisionar infraestructura. El pipeline de CI/CD construirá y publicará imágenes y aplicará los manifests. Ver ADR global de despliegue.
+La entrega incluye una URL de las APIs desplegadas y accesibles en Azure, además de manifests Kubernetes e IaC. Se eligió AKS para desplegar los manifests y Terraform para aprovisionar infraestructura. El pipeline de CI/CD construirá y publicará imágenes y aplicará los manifests. Los recursos de esta prueba vivirán en un grupo dedicado para eliminarlo tras la evaluación; el script de limpieza será local e ignorado por Git. Ver [ADR-0004](../../docs/adr/0004-aks-terraform-y-despliegue.md).
 
 ### ¿Qué modelo de IA utiliza el prototipo?
 
-OpenAI GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry. Se eligió un modelo compacto para las consultas RAG del corpus de la prueba; esta selección no acredita calidad clínica y las respuestas se validarán con los casos del enunciado. La API se configura con secretos en el entorno. El modelo de embeddings y el vector store quedan por decidir.
+OpenAI GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry, con `text-embedding-3-small` y `SimpleVectorStore` para el corpus fijo de la prueba. La aplicación valida relevancia, limita las fuentes a metadata del corpus y se abstiene ante consultas sin coincidencia. Esta selección no acredita calidad clínica; se verificará con los casos del enunciado. Ver [ADR-0003](../../docs/adr/0003-spring-ai-y-modelo-openai.md).
 
 ### ¿Qué puede invalidar el reporte de operación aunque la API responda?
 
-RF-05 exige agregación horaria, total y conteos por nivel, espera promedio y p95 desde registro hasta la primera entrada a consulta, con SQL avanzado. Antes de implementar se debe acordar el límite de `desde`/`hasta`, el tratamiento de pacientes aún sin consulta y la definición exacta del percentil; no se permite cargar todos los registros en memoria para agregar.
+RF-05 se agrupa por hora UTC de registro; usa rango `[desde,hasta)`. Los totales incluyen todos los pacientes del periodo; quienes aún no han entrado a consulta se excluyen solo del promedio y p95 de espera. PostgreSQL calcula promedio y `percentile_cont(0.95)` sin cargar pacientes en memoria. Esta semántica quedó fijada en el diseño.
 
 ### ¿Qué riesgo tiene el escalamiento automático?
 
-Debe afectar solo pacientes aún `REGISTRADO` que excedan su SLA; no puede escalar pacientes `EN_CONSULTA` o `ALTA`, y repetidos intentos no pueden duplicar evento ni auditoría. La concurrencia entre cambio de estado y scheduler, y la recuperación tras reinicio, son escenarios de diseño y prueba que faltan por concretar.
+Debe afectar solo pacientes aún `REGISTRADO` que excedan su SLA; no puede escalar pacientes `EN_CONSULTA` o `ALTA`, y repetidos intentos no pueden duplicar evento ni auditoría. Una actualización condicional transaccional decide el ganador y escribe auditoría, alerta y outbox juntos; el relay publica con reintentos y la idempotencia cubre duplicados. Los casos concurrentes y de recuperación están definidos como criterios de prueba.
 
 ### ¿Qué demuestra la prueba sobre seguridad clínica del RAG?
 
@@ -112,7 +112,7 @@ Sí. Se decidió arquitectura hexagonal liviana por microservicio y se documenta
 
 **El concepto está bien delimitado para continuar a planificación**, porque el enunciado incluye usuarios, capacidades, reglas de negocio, datos de referencia y criterios mínimos de evaluación. El Product Brief y este PRFAQ reinterpretan ese alcance como una iniciativa hipotética; no añaden una promesa de producto comercial.
 
-**Necesita más definición antes del build:** contrato y confiabilidad de eventos, límites del reporte RF-05, seguridad concreta y vector store/embeddings RAG. RF-06, arquitectura, framework/modelo de generación y destino Azure/IaC ya tienen decisiones registradas.
+**Diseño técnico listo para planificación:** las decisiones de arquitectura, integración, alertas, seguridad, reporte, RAG y despliegue están documentadas. La planificación debe convertirlas en historias y criterios verificables. Terraform recibirá la suscripción y región elegidas en la cuenta del usuario; el entorno se elimina después de la evaluación.
 
 **Riesgo principal:** tratar el prototipo como sistema clínico real. El enunciado no aporta validación clínica, regulatoria, privacidad detallada ni aprobación operativa. Mantener la demostración dentro del alcance de la prueba y dejar esa limitación explícita.
 
@@ -120,8 +120,8 @@ Sí. Se decidió arquitectura hexagonal liviana por microservicio y se documenta
 - Tipo de concepto: prototipo interno hipotético para evaluación técnica; no es lanzamiento comercial.
 - Fuente primaria: enunciado suministrado por el usuario. No se usaron estadísticas de mercado ni afirmaciones competitivas.
 - No se hizo brainstorming: la necesidad, usuarios y solución base están dados por la prueba.
-- Decisiones tomadas tras el análisis: arquitectura hexagonal liviana, alertas SSE persistidas, Spring AI con GPT-5.4-mini vía Azure OpenAI/Microsoft Foundry, AKS y Terraform.
-- Decisiones pendientes: formato/reprocesamiento Kafka, vector store/embeddings, autenticación y semántica exacta de RF-05.
+- Decisiones tomadas en análisis/diseño: arquitectura hexagonal liviana, alertas SSE persistidas, Spring AI con GPT-5.4-mini vía Azure OpenAI/Microsoft Foundry, `SimpleVectorStore` y `text-embedding-3-small`, contrato Kafka con outbox e idempotencia, API key por servicio, semántica RF-05, AKS y Terraform.
+- Parámetros del despliegue temporal: suscripción y región de la cuenta Azure del usuario, recibidas por Terraform. El grupo de recursos se eliminará tras la evaluación mediante un script local ignorado por Git.
 <!-- coaching-notes-stage-2 -->
 - Se evitó presentar el servicio como desplegado, aprobado clínicamente o listo para uso real.
 - No se atribuyen testimonios a personas reales; las citas son texto hipotético de framing.
@@ -129,7 +129,7 @@ Sí. Se decidió arquitectura hexagonal liviana por microservicio y se documenta
 - Preguntas de usuarios expusieron la necesidad de distinguir una prueba funcional de autorización de uso clínico real.
 - La respuesta a seguridad y privacidad permanece incompleta en el enunciado; no se afirman controles ausentes.
 <!-- coaching-notes-stage-4 -->
-- Riesgos: integración y reintentos Kafka, concurrencia del scheduler, semántica de p95/fechas, límites de recuperación RAG, Azure/manifests incompatibles si se mezclan opciones.
+- Riesgos a verificar en planificación/implementación: compatibilidad del servicio Kafka elegido con el contrato, concurrencia del scheduler y calibración del umbral RAG.
 - El plazo de tres días requiere priorización explícita en sprint planning.
 <!-- coaching-notes-stage-5 -->
-- Evaluación: concepto suficientemente claro para pasar a Product Requirements / especificación; no listo para build hasta cerrar requisitos ambiguos y decisiones de arquitectura.
+- Evaluación: concepto y diseño suficientemente definidos para pasar a desglose de historias y planificación antes del build.

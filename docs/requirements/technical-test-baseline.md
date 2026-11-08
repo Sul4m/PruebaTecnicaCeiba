@@ -163,6 +163,6 @@ Este texto se incluye únicamente para reproducir el corpus del ejercicio; no se
 - RAG con Spring AI y OpenAI GPT-5.4-mini servido desde Azure OpenAI/Microsoft Foundry: [ADR-0003](../adr/0003-spring-ai-y-modelo-openai.md).
 - Despliegue en AKS con Terraform; IaC aprovisiona infraestructura y el pipeline aplica los manifests para publicar APIs accesibles: [ADR-0004](../adr/0004-aks-terraform-y-despliegue.md).
 
-## Decisiones aún pendientes de diseño
+## Resoluciones de diseño para la prueba
 
-Formato y esquema/versionado de eventos; estrategia de entrega/reintento si Kafka cae; vector store y embeddings para RAG; autenticación JWT o API key; semántica de fechas y pacientes sin primera consulta en RF-05; región y tamaño del clúster AKS según cuota/costo disponibles; y retención/recuperación de alertas. Resolver antes de implementar la parte afectada y registrar las decisiones en ADR globales bajo `docs/adr/`.
+Las decisiones técnicas derivadas del enunciado están resueltas en el [diseño global](../../_bmad-output/planning-artifacts/architecture/solution-design-PruebaTecnicaCeiba.md) y los ADR bajo `docs/adr/`: arquitectura hexagonal liviana; alertas SSE persistidas; Spring AI con GPT-5.4-mini, embeddings `text-embedding-3-small` y `SimpleVectorStore`; autenticación con API key por servicio; contrato Kafka versionado con outbox; semántica UTC de RF-05; y despliegue temporal en AKS con Terraform. La suscripción y región se pasan como variables al Terraform del usuario; no son preguntas abiertas del diseño. El backlog de implementación desglosa el trabajo sin cambiar las reglas exactas de este baseline.
