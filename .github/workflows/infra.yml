@@ -1,0 +1,96 @@
+name: infra
+
+# Terraform solo cuando cambia infra/.
+#  - plan (pull_request): identidad SOLO LECTURA (id-gh-tf-plan-<sufijo>, subject pull_request).
+#  - apply (push a master): identidad con escritura (id-gh-tf-apply-<sufijo>, subject
+#    environment:azure-infra). El environment `azure-infra` debe tener aprobación requerida y
+#    limitarse a la rama protegida.
+# Variables de Actions (no secretas): AZURE_TF_PLAN_CLIENT_ID, AZURE_TF_APPLY_CLIENT_ID,
+# AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_LOCATION, SUFFIX, ADMIN_OBJECT_ID,
+# TFSTATE_RG, TFSTATE_STORAGE_ACCOUNT, TFSTATE_STORAGE_ACCOUNT_ID.
+
+on:
+  pull_request:
+    paths: ["infra/**", ".github/workflows/infra.yml"]
+  push:
+    branches: [master]
+    paths: ["infra/**", ".github/workflows/infra.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+env:
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_location: ${{ vars.AZURE_LOCATION }}
+  TF_VAR_suffix: ${{ vars.SUFFIX }}
+  TF_VAR_admin_object_id: ${{ vars.ADMIN_OBJECT_ID }}
+  TF_VAR_tfstate_storage_account_id: ${{ vars.TFSTATE_STORAGE_ACCOUNT_ID }}
+  TF_VAR_github_repository: ${{ github.repository }}
+  TF_IN_AUTOMATION: "true"
+  TFSTATE_RG: ${{ vars.TFSTATE_RG }}
+  TFSTATE_SA: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_TF_PLAN_CLIENT_ID }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.11"
+      - name: init / fmt / validate
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${TFSTATE_RG}" \
+            -backend-config="storage_account_name=${TFSTATE_SA}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=pruebatecnicaceiba.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform fmt -check -recursive
+          terraform validate
+      # Identidad de solo lectura: sin bloqueo de estado (requiere escritura) y sin refresh de
+      # secretos de Key Vault (plano de datos que Reader no puede leer).
+      - name: plan (solo lectura)
+        working-directory: infra/terraform
+        run: terraform plan -input=false -lock=false -refresh=false
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: azure-infra # subject: repo:<owner>/<repo>:environment:azure-infra
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_TF_APPLY_CLIENT_ID }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.11"
+      - name: init, plan y apply
+        working-directory: infra/terraform
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${TFSTATE_RG}" \
+            -backend-config="storage_account_name=${TFSTATE_SA}" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=pruebatecnicaceiba.tfstate" \
+            -backend-config="use_azuread_auth=true"
+          terraform plan -input=false -out=tfplan
+          terraform apply -input=false tfplan

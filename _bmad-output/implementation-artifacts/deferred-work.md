@@ -34,3 +34,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-3-responder-con-claridad-cuando-el-proveedor-llm-falla.md`
   summary: Tests de half-open y recuperacion del circuito, e IT HTTP de embeddings caido.
   evidence: Solo se prueba apertura y rechazo rapido; embeddings se cubre a nivel de retriever.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-exponer-triage-en-azure.md`
+  summary: Sustituir la SAS de namespace de Event Hubs por roles Data Sender/Data Receiver con Workload Identity (OAUTHBEARER con callback de azure-identity) y dejar de usar `$ConnectionString`.
+  evidence: La connection string con Send+Listen vive en Key Vault y en un Secret de Kubernetes; una identidad por rol reduce el radio de exposicion pero exige un login callback en la app.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-exponer-triage-en-azure.md`
+  summary: Usuario de BD con minimo privilegio (no el administrador) y `sslmode=verify-full` con el certificado raiz de Azure en R2DBC y Flyway.
+  evidence: Triage usa el admin `pgadmin` y `sslmode=require` cifra sin validar el certificado del servidor.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-6-exponer-triage-en-azure.md`
+  summary: Verificar por checksum el binario de kubeconform descargado en el workflow `triage.yml` (o usar una accion fijada por SHA).
+  evidence: Se descarga con curl desde una release de GitHub sin comprobar hash.

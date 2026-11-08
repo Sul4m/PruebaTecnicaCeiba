@@ -1,0 +1,18 @@
+# Paso único (lo aplica un administrador del clúster, no el CI). Requiere el add-on app routing
+# (web_app_routing en Terraform). Crea un NGINX gestionado con IP pública y etiqueta DNS
+# <ingress_dns_label>.<location>.cloudapp.azure.com (salida `ingress_host` de Terraform).
+# AVISO: el soporte de Microsoft del add-on NGINX termina en noviembre de 2026 (Gateway API es el
+# reemplazo); para esta prueba efímera es aceptable, ver docs/despliegue-azure.md.
+apiVersion: approuting.kubernetes.azure.com/v1alpha1
+kind: NginxIngressController
+metadata:
+  name: nginx-triage
+spec:
+  ingressClassName: nginx-triage
+  controllerNamePrefix: nginx-triage
+  scaling:
+    minReplicas: 1 # el valor por defecto es 2; el nodo único no lo necesita
+    maxReplicas: 2
+  loadBalancerAnnotations:
+    service.beta.kubernetes.io/azure-dns-label-name: "${INGRESS_DNS_LABEL}"
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: "/healthz"

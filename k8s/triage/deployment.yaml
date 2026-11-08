@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: triage
+  namespace: triage
+  labels:
+    app: triage
+spec:
+  # replicas: 1 es OBLIGATORIO hoy: el relay del outbox (y el scheduler de escalamiento) no tienen
+  # bloqueo en base de datos; con varias réplicas publicarían eventos duplicados y romperían el
+  # orden por paciente (ADR-0005, deferred-work.md Story 1.4). Para escalar, añadir primero un
+  # lock (p. ej. pg_try_advisory_xact_lock).
+  replicas: 1
+  # Recreate (no RollingUpdate): durante un rollout nunca conviven dos relays.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: triage
+  template:
+    metadata:
+      labels:
+        app: triage
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: triage
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: triage
+          image: "${IMAGE}" # <acr>.azurecr.io/triage-service:<git-sha> (tag inmutable)
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: triage-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: triage-secrets, key: DB_PASSWORD }
+            - name: TRIAGE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: triage-secrets, key: TRIAGE_API_KEY }
+            - name: EVENTHUBS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef: { name: triage-secrets, key: EVENTHUBS_CONNECTION_STRING }
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Arranque lento de Spring + Flyway: hasta 5 s * 36 = 3 min antes de reiniciar.
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # Montar el volumen CSI es lo que dispara la lectura de Key Vault y crea triage-secrets.
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: triage-keyvault
