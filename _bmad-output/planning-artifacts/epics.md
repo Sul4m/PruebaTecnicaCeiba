@@ -586,3 +586,24 @@ para evaluar la prueba completa sin pasos manuales ocultos.
 **Dado** el flujo completo en Azure
 **Cuando** se registra un paciente con SLA corto configurado para la demo
 **Entonces** se observa en orden: registro, conteo activo en el Asistente, escalamiento, alerta por SSE y alta que decrementa el conteo.
+
+### Story 4.5: Puerta E2E con curl, BDD y MBT
+
+Como equipo de entrega,
+quiero una puerta E2E ejecutable contra `docker compose up` real,
+para validar el flujo completo localmente antes de desplegar en Azure.
+
+**Acceptance Criteria:**
+
+**Dado** Docker disponible
+**Cuando** se ejecuta `e2e/run.sh`
+**Entonces** levanta el stack con secretos sintéticos y SLA corto (sin tocar `.env`), espera la readiness y sale con código distinto de 0 si algún escenario falla
+**Y** deja el stack abajo (`docker compose down -v`).
+
+**Dado** los criterios de las historias 1.1 a 4.3
+**Cuando** se ejecutan los escenarios BDD de `e2e/features/`
+**Entonces** cubren E1-E6, validaciones 400 con `campo`, 401, transiciones válidas e inválidas, reportes, escalamiento una sola vez, alertas persistidas, SSE con `Last-Event-ID`, conteo vía Kafka, RAG con cita, abstención y 503 con proveedor caído.
+
+**Dado** el modelo de estados del paciente en `e2e/model/`
+**Cuando** el generador MBT lo recorre
+**Entonces** cubre todas sus transiciones válidas, inválidas y de tiempo, verificando estado y `escalado` en cada paso y el conteo del Asistente al final.

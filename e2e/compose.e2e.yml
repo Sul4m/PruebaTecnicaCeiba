@@ -1,0 +1,7 @@
+# Override SOLO para la puerta E2E (no edita docker-compose.yml ni .env).
+# SLA corto de CRITICO (1 min, minimo posible: los SLA son minutos enteros) e intervalo de escalamiento de 2 s.
+services:
+  triage:
+    environment:
+      TRIAGE_SLA_MINUTES_CRITICO: "1"
+      TRIAGE_ESCALATION_INTERVAL: 2s
