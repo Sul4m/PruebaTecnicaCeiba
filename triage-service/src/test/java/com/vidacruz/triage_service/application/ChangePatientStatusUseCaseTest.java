@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 import com.vidacruz.triage_service.domain.AuditEvent;
 import com.vidacruz.triage_service.domain.Patient;
 import com.vidacruz.triage_service.domain.PatientStatus;
+import com.vidacruz.triage_service.domain.TriageEventEnvelope;
 import com.vidacruz.triage_service.domain.TriageLevel;
 import com.vidacruz.triage_service.domain.VitalSigns;
 import java.math.BigDecimal;
@@ -33,21 +34,24 @@ class ChangePatientStatusUseCaseTest {
     private final UUID id = UUID.randomUUID();
     private PatientRepositoryPort patients;
     private AuditRepositoryPort audits;
+    private OutboxPort outbox;
     private ChangePatientStatusUseCase useCase;
 
     @BeforeEach
     void setUp() {
         patients = mock(PatientRepositoryPort.class);
         audits = mock(AuditRepositoryPort.class);
+        outbox = mock(OutboxPort.class);
+        when(outbox.append(any())).thenReturn(Mono.empty());
         TransactionalOperator tx = mock(TransactionalOperator.class);
         when(tx.transactional(any(Mono.class))).thenAnswer(i -> i.getArgument(0));
-        useCase = new ChangePatientStatusUseCase(patients, audits, tx, Clock.fixed(NOW, ZoneOffset.UTC));
+        useCase = new ChangePatientStatusUseCase(patients, audits, outbox, tx, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private Patient patient(PatientStatus status) {
         return new Patient(id, "Luis Gómez", 40, "Renovación de recetario",
                 new VitalSigns(70, 115, 75, 99, new BigDecimal("36.4"), 0, 15), TriageLevel.NO_URGENTE_2,
-                status, false, NOW_MICROS, NOW_MICROS);
+                status, false, NOW_MICROS, NOW_MICROS, 1L);
     }
 
     @Test
@@ -55,7 +59,7 @@ class ChangePatientStatusUseCaseTest {
         when(patients.findById(id)).thenReturn(Mono.just(patient(PatientStatus.REGISTRADO)),
                 Mono.just(patient(PatientStatus.EN_CONSULTA)));
         when(patients.updateStatus(eq(id), eq(PatientStatus.REGISTRADO), eq(PatientStatus.ALTA), any()))
-                .thenReturn(Mono.just(false));
+                .thenReturn(Mono.empty());
 
         StepVerifier.create(useCase.change(id, PatientStatus.ALTA))
                 .expectErrorSatisfies(e -> {
@@ -70,13 +74,14 @@ class ChangePatientStatusUseCaseTest {
                 .verify();
 
         verify(audits, never()).save(any());
+        verify(outbox, never()).append(any());
     }
 
     @Test
     void happyPathSavesAuditWithTruncatedClockInstant() {
         when(patients.findById(id)).thenReturn(Mono.just(patient(PatientStatus.REGISTRADO)));
         when(patients.updateStatus(eq(id), eq(PatientStatus.REGISTRADO), eq(PatientStatus.EN_CONSULTA),
-                eq(NOW_MICROS))).thenReturn(Mono.just(true));
+                eq(NOW_MICROS))).thenReturn(Mono.just(new PatientRepositoryPort.StatusUpdate(2L, false)));
         when(audits.save(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
 
         StepVerifier.create(useCase.change(id, PatientStatus.EN_CONSULTA))
@@ -84,6 +89,7 @@ class ChangePatientStatusUseCaseTest {
                     assertThat(c.previous()).isEqualTo(PatientStatus.REGISTRADO);
                     assertThat(c.patient().status()).isEqualTo(PatientStatus.EN_CONSULTA);
                     assertThat(c.patient().statusChangedAt()).isEqualTo(NOW_MICROS);
+                    assertThat(c.patient().aggregateVersion()).isEqualTo(2L);
                 })
                 .verifyComplete();
 
@@ -95,5 +101,15 @@ class ChangePatientStatusUseCaseTest {
         assertThat(audit.newStatus()).isEqualTo(PatientStatus.EN_CONSULTA);
         assertThat(audit.eventType()).isEqualTo(AuditEvent.PATIENT_IN_CONSULTATION);
         assertThat(audit.occurredAt()).isEqualTo(NOW_MICROS);
+
+        ArgumentCaptor<TriageEventEnvelope> eventCaptor = ArgumentCaptor.forClass(TriageEventEnvelope.class);
+        verify(outbox).append(eventCaptor.capture());
+        TriageEventEnvelope event = eventCaptor.getValue();
+        assertThat(event.eventType()).isEqualTo("paciente_en_consulta");
+        assertThat(event.aggregateId()).isEqualTo(id);
+        assertThat(event.aggregateVersion()).isEqualTo(2L);
+        assertThat(event.occurredAt()).isEqualTo(audit.occurredAt());
+        assertThat(event.payload().estado()).isEqualTo("EN_CONSULTA");
+        assertThat(event.payload().nivel()).isEqualTo("NO_URGENTE_2");
     }
 }

@@ -4,6 +4,7 @@ import com.vidacruz.triage_service.domain.AuditEvent;
 import com.vidacruz.triage_service.domain.Patient;
 import com.vidacruz.triage_service.domain.PatientStatus;
 import com.vidacruz.triage_service.domain.TriageClassifier;
+import com.vidacruz.triage_service.domain.TriageEventEnvelope;
 import com.vidacruz.triage_service.domain.TriageLevel;
 import java.time.Clock;
 import java.time.Instant;
@@ -16,14 +17,16 @@ public class RegisterPatientUseCase {
 
     private final PatientRepositoryPort patients;
     private final AuditRepositoryPort audits;
+    private final OutboxPort outbox;
     private final ClassificationMetricsPort metrics;
     private final TransactionalOperator tx;
     private final Clock clock;
 
     public RegisterPatientUseCase(PatientRepositoryPort patients, AuditRepositoryPort audits,
-            ClassificationMetricsPort metrics, TransactionalOperator tx, Clock clock) {
+            OutboxPort outbox, ClassificationMetricsPort metrics, TransactionalOperator tx, Clock clock) {
         this.patients = patients;
         this.audits = audits;
+        this.outbox = outbox;
         this.metrics = metrics;
         this.tx = tx;
         this.clock = clock;
@@ -36,11 +39,14 @@ public class RegisterPatientUseCase {
             TriageLevel level = TriageClassifier.classify(command.vitalSigns(), command.chiefComplaint());
             Patient patient = new Patient(UUID.randomUUID(), command.fullName(), command.age(),
                     command.chiefComplaint(), command.vitalSigns(), level, PatientStatus.REGISTRADO,
-                    false, now, now);
+                    false, now, now, 1L);
             AuditEvent audit = new AuditEvent(UUID.randomUUID(), patient.id(), null,
                     PatientStatus.REGISTRADO, AuditEvent.PATIENT_REGISTERED, now);
+            TriageEventEnvelope event = TriageEventEnvelope.of(AuditEvent.PATIENT_REGISTERED, patient.id(), 1L,
+                    level, PatientStatus.REGISTRADO, false, now);
             return patients.save(patient)
                     .then(audits.save(audit))
+                    .then(outbox.append(event))
                     .thenReturn(patient)
                     .as(tx::transactional)
                     .doOnNext(saved -> metrics.recordClassification(saved.level()));

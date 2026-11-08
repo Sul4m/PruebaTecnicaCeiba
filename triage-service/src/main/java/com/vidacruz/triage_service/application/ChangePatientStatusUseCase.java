@@ -3,6 +3,7 @@ package com.vidacruz.triage_service.application;
 import com.vidacruz.triage_service.domain.AuditEvent;
 import com.vidacruz.triage_service.domain.Patient;
 import com.vidacruz.triage_service.domain.PatientStatus;
+import com.vidacruz.triage_service.domain.TriageEventEnvelope;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -18,13 +19,15 @@ public class ChangePatientStatusUseCase {
 
     private final PatientRepositoryPort patients;
     private final AuditRepositoryPort audits;
+    private final OutboxPort outbox;
     private final TransactionalOperator tx;
     private final Clock clock;
 
     public ChangePatientStatusUseCase(PatientRepositoryPort patients, AuditRepositoryPort audits,
-            TransactionalOperator tx, Clock clock) {
+            OutboxPort outbox, TransactionalOperator tx, Clock clock) {
         this.patients = patients;
         this.audits = audits;
+        this.outbox = outbox;
         this.tx = tx;
         this.clock = clock;
     }
@@ -40,16 +43,23 @@ public class ChangePatientStatusUseCase {
                             return Mono.error(new InvalidStatusTransitionException(from, requested));
                         }
                         return patients.updateStatus(id, from, requested, now)
-                                .flatMap(updated -> updated
-                                        ? audits.save(new AuditEvent(UUID.randomUUID(), id, from, requested,
-                                                        eventType(requested), now))
-                                                .thenReturn(new Change(current.withStatus(requested, now), from))
-                                        // Carrera perdida: releer para informar el estado real.
-                                        : patients.findById(id)
-                                                .switchIfEmpty(Mono.error(() -> new PatientNotFoundException(id)))
-                                                .flatMap(latest -> Mono.<Change>error(
-                                                        InvalidStatusTransitionException.lostRace(latest.status(),
-                                                                requested))));
+                                .flatMap(updated -> {
+                                    String type = eventType(requested);
+                                    TriageEventEnvelope event = TriageEventEnvelope.of(type, id,
+                                            updated.aggregateVersion(), current.level(), requested,
+                                            updated.escalated(), now);
+                                    return audits.save(new AuditEvent(UUID.randomUUID(), id, from, requested,
+                                                    type, now))
+                                            .then(outbox.append(event))
+                                            .thenReturn(new Change(current.withStatus(requested, now,
+                                                    updated.aggregateVersion(), updated.escalated()), from));
+                                })
+                                // Carrera perdida (0 filas): releer para informar el estado real.
+                                .switchIfEmpty(Mono.defer(() -> patients.findById(id)
+                                        .switchIfEmpty(Mono.error(() -> new PatientNotFoundException(id)))
+                                        .flatMap(latest -> Mono.<Change>error(
+                                                InvalidStatusTransitionException.lostRace(latest.status(),
+                                                        requested)))));
                     })
                     .as(tx::transactional);
         });
