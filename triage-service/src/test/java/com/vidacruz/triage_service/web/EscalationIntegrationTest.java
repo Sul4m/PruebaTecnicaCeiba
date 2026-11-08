@@ -8,6 +8,7 @@ import static org.mockito.Mockito.reset;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vidacruz.triage_service.PostgresTestSupport;
+import com.vidacruz.triage_service.application.AlertRepositoryPort;
 import com.vidacruz.triage_service.application.AuditRepositoryPort;
 import com.vidacruz.triage_service.application.EscalateOverduePatientsUseCase;
 import com.vidacruz.triage_service.application.EscalationMetricsPort;
@@ -48,6 +49,7 @@ class EscalationIntegrationTest extends PostgresTestSupport {
     @Autowired WebTestClient client;
     @Autowired PatientRepositoryPort patients;
     @Autowired OutboxPort outbox;
+    @Autowired AlertRepositoryPort alerts;
     @Autowired EscalationMetricsPort metrics;
     @Autowired TransactionalOperator tx;
     @Autowired MeterRegistry registry;
@@ -59,13 +61,14 @@ class EscalationIntegrationTest extends PostgresTestSupport {
     void clean() {
         reset(audits);
         String old = "(SELECT id FROM patient WHERE registered_at < '2021-01-01')";
+        db.sql("DELETE FROM medical_alert WHERE patient_id IN " + old).fetch().rowsUpdated().block();
         db.sql("DELETE FROM outbox_event WHERE aggregate_id IN " + old).fetch().rowsUpdated().block();
         db.sql("DELETE FROM audit_event WHERE patient_id IN " + old).fetch().rowsUpdated().block();
         db.sql("DELETE FROM patient WHERE registered_at < '2021-01-01'").fetch().rowsUpdated().block();
     }
 
     private EscalateOverduePatientsUseCase useCase(Instant now, int batchSize) {
-        return new EscalateOverduePatientsUseCase(patients, audits, outbox, metrics, tx,
+        return new EscalateOverduePatientsUseCase(patients, audits, outbox, alerts, metrics, tx,
                 Clock.fixed(now, ZoneOffset.UTC), batchSize);
     }
 

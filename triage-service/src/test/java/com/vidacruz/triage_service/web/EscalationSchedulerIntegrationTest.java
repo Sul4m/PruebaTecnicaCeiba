@@ -26,6 +26,7 @@ class EscalationSchedulerIntegrationTest extends PostgresTestSupport {
 
     @AfterEach
     void cleanUp() {
+        db.sql("DELETE FROM medical_alert WHERE patient_id = :id").bind("id", id).fetch().rowsUpdated().block();
         db.sql("DELETE FROM outbox_event WHERE aggregate_id = :id").bind("id", id).fetch().rowsUpdated().block();
         db.sql("DELETE FROM audit_event WHERE patient_id = :id").bind("id", id).fetch().rowsUpdated().block();
         db.sql("DELETE FROM patient WHERE id = :id").bind("id", id).fetch().rowsUpdated().block();

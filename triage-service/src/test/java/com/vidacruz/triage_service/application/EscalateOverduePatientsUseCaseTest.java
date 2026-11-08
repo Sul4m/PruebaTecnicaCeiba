@@ -34,6 +34,7 @@ class EscalateOverduePatientsUseCaseTest {
     private PatientRepositoryPort patients;
     private AuditRepositoryPort audits;
     private OutboxPort outbox;
+    private AlertRepositoryPort alerts;
     private EscalationMetricsPort metrics;
     private EscalateOverduePatientsUseCase useCase;
 
@@ -42,12 +43,14 @@ class EscalateOverduePatientsUseCaseTest {
         patients = mock(PatientRepositoryPort.class);
         audits = mock(AuditRepositoryPort.class);
         outbox = mock(OutboxPort.class);
+        alerts = mock(AlertRepositoryPort.class);
+        when(alerts.appendAll(any(), any())).thenReturn(Flux.empty());
         metrics = mock(EscalationMetricsPort.class);
         when(outbox.append(any())).thenReturn(Mono.empty());
         when(audits.save(any())).thenAnswer(i -> Mono.just(i.getArgument(0)));
         TransactionalOperator tx = mock(TransactionalOperator.class);
         when(tx.transactional(any(Mono.class))).thenAnswer(i -> i.getArgument(0));
-        useCase = new EscalateOverduePatientsUseCase(patients, audits, outbox, metrics, tx,
+        useCase = new EscalateOverduePatientsUseCase(patients, audits, outbox, alerts, metrics, tx,
                 Clock.fixed(NOW, ZoneOffset.UTC), 2);
     }
 
@@ -113,6 +116,38 @@ class EscalateOverduePatientsUseCaseTest {
                 .verify();
 
         verify(outbox, never()).append(any());
+        verify(metrics, never()).recordEscalation(any());
+    }
+
+    @Test
+    void alertsAreAppendedOnceForTheWholeBatchWithTheEscalationInstant() {
+        var p1 = escalated(TriageLevel.CRITICO, 2L);
+        var p2 = escalated(TriageLevel.URGENTE, 2L);
+        when(patients.escalateOverdue(NOW_MICROS, 2)).thenReturn(Flux.just(p1, p2));
+
+        StepVerifier.create(useCase.escalateBatch()).expectNext(2).verifyComplete();
+
+        verify(alerts).appendAll(java.util.List.of(p1, p2), NOW_MICROS);
+    }
+
+    @Test
+    void noAlertsAppendCallWhenNothingEscalated() {
+        when(patients.escalateOverdue(NOW_MICROS, 2)).thenReturn(Flux.empty());
+
+        StepVerifier.create(useCase.escalateBatch()).expectNext(0).verifyComplete();
+
+        verify(alerts, never()).appendAll(any(), any());
+    }
+
+    @Test
+    void alertFailurePropagatesAndSkipsMetric() {
+        when(patients.escalateOverdue(NOW_MICROS, 2)).thenReturn(Flux.just(escalated(TriageLevel.CRITICO, 2L)));
+        doReturn(Flux.error(new IllegalStateException("alert down"))).when(alerts).appendAll(any(), any());
+
+        StepVerifier.create(useCase.escalateBatch())
+                .expectErrorMessage("alert down")
+                .verify();
+
         verify(metrics, never()).recordEscalation(any());
     }
 }
