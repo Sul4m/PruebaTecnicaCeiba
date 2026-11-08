@@ -96,7 +96,7 @@ variable "redis_sku_name" {
 }
 
 variable "openai_chat_capacity" {
-  description = "Capacidad (miles de tokens por minuto) del deployment gpt-5.4-mini (GlobalStandard)."
+  description = "Capacidad (miles de tokens por minuto) del deployment gpt-5.4-mini (DataZoneStandard)."
   type        = number
   default     = 10
 }

@@ -202,3 +202,9 @@ El total real del entorno (2 nodos D2s_v6, PostgreSQL `GP_Standard_D2ds_v4`, Eve
 - Emisión del certificado `asistente-tls` junto al de Triage y que el pod programe junto a Triage.
 - Umbral de similitud (0,45) sin calibrar con `text-embedding-3-small` real.
 - El workflow ampliado (no ejecutado).
+
+## Lección: cuota de gpt-5.4-mini en suscripciones nuevas
+
+En una suscripción pay-as-you-go nueva, `gpt-5.4-mini` tiene cuota 0 en `GlobalStandard` y 200 en `DataZoneStandard` (eastus2). El despliegue de chat usa `DataZoneStandard`; el de embeddings sigue en `GlobalStandard` (cuota 1000). Comprobar antes con `az cognitiveservices usage list -l eastus2`.
+
+Validado en Azure (2026-11-08): consultas RAG sobre PROTO-001/002/003 con cita, abstención sin protocolo, y flujo Triage → Event Hubs → Asistente → Redis (registro suma 1, alta resta 1).
