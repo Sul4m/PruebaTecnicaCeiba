@@ -41,10 +41,17 @@ public class SpringAiProtocolRetriever implements ProtocolRetrievalPort {
     private final AssistantRagProperties props;
     private final List<ProtocolChunk> corpus;
     private final Mono<Void> indexing;
+    private final LlmGuard guard;
     private volatile boolean indexed;
 
     public SpringAiProtocolRetriever(SimpleVectorStore vectorStore, Scheduler scheduler,
             AssistantRagProperties props, List<ProtocolChunk> corpus) {
+        this(vectorStore, scheduler, props, corpus, LlmGuard.disabled());
+    }
+
+    public SpringAiProtocolRetriever(SimpleVectorStore vectorStore, Scheduler scheduler,
+            AssistantRagProperties props, List<ProtocolChunk> corpus, LlmGuard guard) {
+        this.guard = guard;
         this.vectorStore = vectorStore;
         this.scheduler = scheduler;
         this.props = props;
@@ -76,9 +83,12 @@ public class SpringAiProtocolRetriever implements ProtocolRetrievalPort {
     public Mono<List<RetrievedChunk>> retrieve(String question) {
         Mono<List<RetrievedChunk>> search = Mono.fromCallable(() -> searchBlocking(question))
                 .subscribeOn(scheduler)
-                .timeout(props.embeddingTimeout())
-                .onErrorMap(this::toUnavailable);
-        return indexing.then(search);
+                .timeout(props.embeddingTimeout());
+        // Indexacion pendiente (reintento) y busqueda van protegidas: con circuito abierto no se contacta al proveedor.
+        // Ya indexado, la indexacion es un no-op y no se cuenta en el circuito.
+        Mono<Void> ensureIndexed = Mono.defer(() -> indexed ? Mono.<Void>empty()
+                : guard.protect(LlmGuard.EMBEDDINGS, indexing));
+        return ensureIndexed.then(guard.protect(LlmGuard.EMBEDDINGS, search)).onErrorMap(this::toUnavailable);
     }
 
     private void indexBlocking() {

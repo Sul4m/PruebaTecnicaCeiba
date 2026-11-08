@@ -13,14 +13,17 @@ import org.springframework.context.annotation.Configuration;
 
 import com.vidacruz.clinical_assistant_service.domain.ProtocolChunk;
 import com.vidacruz.clinical_assistant_service.infrastructure.ai.CorpusIndexRunner;
+import com.vidacruz.clinical_assistant_service.infrastructure.ai.LlmGuard;
 import com.vidacruz.clinical_assistant_service.infrastructure.ai.ProtocolCorpusLoader;
 import com.vidacruz.clinical_assistant_service.infrastructure.ai.SpringAiAnswerGenerator;
 import com.vidacruz.clinical_assistant_service.infrastructure.ai.SpringAiProtocolRetriever;
+import io.micrometer.core.instrument.MeterRegistry;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({ AssistantRagProperties.class, AssistantSecurityProperties.class })
+@EnableConfigurationProperties({ AssistantRagProperties.class, AssistantSecurityProperties.class,
+        AssistantLlmProperties.class })
 public class RagConfig {
 
     /** Falla el arranque, antes de crear beans, si no se eligio proveedor de IA de forma explicita. */
@@ -53,9 +56,14 @@ public class RagConfig {
     }
 
     @Bean
+    LlmGuard llmGuard(AssistantLlmProperties props, MeterRegistry registry) {
+        return new LlmGuard(props, registry);
+    }
+
+    @Bean
     SpringAiProtocolRetriever protocolRetriever(SimpleVectorStore store, Scheduler ragScheduler,
-            AssistantRagProperties props, List<ProtocolChunk> protocolCorpus) {
-        return new SpringAiProtocolRetriever(store, ragScheduler, props, protocolCorpus);
+            AssistantRagProperties props, List<ProtocolChunk> protocolCorpus, LlmGuard llmGuard) {
+        return new SpringAiProtocolRetriever(store, ragScheduler, props, protocolCorpus, llmGuard);
     }
 
     @Bean
@@ -65,7 +73,8 @@ public class RagConfig {
 
     /** Sin tools/functions registradas: el modelo solo redacta con el contexto recuperado. */
     @Bean
-    SpringAiAnswerGenerator answerGenerator(ChatClient.Builder builder, AssistantRagProperties props) {
-        return new SpringAiAnswerGenerator(builder.build(), props);
+    SpringAiAnswerGenerator answerGenerator(ChatClient.Builder builder, AssistantRagProperties props,
+            LlmGuard llmGuard) {
+        return new SpringAiAnswerGenerator(builder.build(), props, llmGuard);
     }
 }

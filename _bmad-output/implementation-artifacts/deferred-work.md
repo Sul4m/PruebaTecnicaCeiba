@@ -22,3 +22,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-3-consultar-la-carga-activa-de-urgencias-por-nivel.md`
   summary: Exigir autenticación y TLS de Redis en el perfil `azure` (Azure Managed Redis) y fijar `REDIS_PASSWORD` y `REDIS_SSL` desde Key Vault en la Story 3.4.
   evidence: El Compose local usa Redis sin contraseña y `REDIS_PASSWORD` y `REDIS_SSL` tienen valores vacíos y falso por defecto; el perfil azure no valida que estén definidos.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-responder-con-claridad-cuando-el-proveedor-llm-falla.md`
+  summary: Hilo bloqueante del scheduler de embeddings sigue vivo tras el timeout (Mono.timeout no interrumpe la llamada sincrona de Spring AI); acotarlo con timeout del cliente HTTP del proveedor.
+  evidence: Con proveedor lento los hilos quedan ocupados hasta que el SDK expira; el bulkhead y la cola acotada limitan el dano pero no lo eliminan.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-responder-con-claridad-cuando-el-proveedor-llm-falla.md`
+  summary: Validar `assistant.llm.*` (minimum-number-of-calls <= sliding-window-size) y revisar la configuracion half-open (hoy solo permitted-calls).
+  evidence: Una combinacion invalida solo falla al crear el circuito, en la primera consulta.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-responder-con-claridad-cuando-el-proveedor-llm-falla.md`
+  summary: Registrar metricas de estado del circuito (TaggedCircuitBreakerMetrics / TaggedBulkheadMetrics) y exponerlas.
+  evidence: Hoy solo hay timer y contadores de fallos/rechazos; no se ve el estado del circuito ni se expone `metrics` por actuator.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-3-responder-con-claridad-cuando-el-proveedor-llm-falla.md`
+  summary: Tests de half-open y recuperacion del circuito, e IT HTTP de embeddings caido.
+  evidence: Solo se prueba apertura y rechazo rapido; embeddings se cubre a nivel de retriever.

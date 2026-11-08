@@ -82,3 +82,16 @@ assistant:
     scheduler:
       threads: 4
       queue-capacity: 100
+  # Resiliencia del proveedor LLM (Story 4.3). Timeouts por llamada: assistant.rag.llm-timeout / embedding-timeout.
+  # Circuito abierto o bulkhead saturado => rechazo inmediato (HTTP 503), sin colas.
+  llm:
+    circuit-breaker:
+      failure-rate-threshold: ${ASISTENTE_LLM_CB_FAILURE_RATE:50}
+      sliding-window-size: ${ASISTENTE_LLM_CB_WINDOW:10}
+      minimum-number-of-calls: ${ASISTENTE_LLM_CB_MIN_CALLS:5}
+      wait-duration-in-open-state: ${ASISTENTE_LLM_CB_WAIT_OPEN:30s}
+      permitted-calls-in-half-open-state: 3
+    bulkhead:
+      chat-max-concurrent-calls: ${ASISTENTE_LLM_BULKHEAD_CHAT:8}
+      embedding-max-concurrent-calls: ${ASISTENTE_LLM_BULKHEAD_EMBEDDINGS:8}
+      max-wait: 0ms
