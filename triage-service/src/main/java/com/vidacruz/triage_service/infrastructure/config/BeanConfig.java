@@ -3,7 +3,9 @@ package com.vidacruz.triage_service.infrastructure.config;
 import com.vidacruz.triage_service.application.AuditRepositoryPort;
 import com.vidacruz.triage_service.application.ChangePatientStatusUseCase;
 import com.vidacruz.triage_service.application.ClassificationMetricsPort;
+import com.vidacruz.triage_service.application.GetOperationsReportUseCase;
 import com.vidacruz.triage_service.application.GetPatientUseCase;
+import com.vidacruz.triage_service.application.OperationsReportPort;
 import com.vidacruz.triage_service.application.PatientRepositoryPort;
 import com.vidacruz.triage_service.application.RegisterPatientUseCase;
 import com.vidacruz.triage_service.infrastructure.security.SecurityProperties;
@@ -38,6 +40,11 @@ class BeanConfig {
     ChangePatientStatusUseCase changePatientStatusUseCase(PatientRepositoryPort patients,
             AuditRepositoryPort audits, TransactionalOperator tx, Clock clock) {
         return new ChangePatientStatusUseCase(patients, audits, tx, clock);
+    }
+
+    @Bean
+    GetOperationsReportUseCase getOperationsReportUseCase(OperationsReportPort report) {
+        return new GetOperationsReportUseCase(report);
     }
 
     @Bean

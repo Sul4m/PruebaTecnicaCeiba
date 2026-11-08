@@ -1,6 +1,7 @@
 package com.vidacruz.triage_service.infrastructure.web;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.vidacruz.triage_service.application.InvalidReportParameterException;
 import com.vidacruz.triage_service.application.InvalidStatusTransitionException;
 import com.vidacruz.triage_service.application.PatientNotFoundException;
 import java.util.Comparator;
@@ -70,6 +71,14 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             problem.setDetail("El cuerpo de la solicitud está ausente o tiene un JSON mal formado");
         }
         return createResponseEntity(problem, headers, HttpStatus.BAD_REQUEST, exchange);
+    }
+
+    @ExceptionHandler(InvalidReportParameterException.class)
+    ProblemDetail handleInvalidReportParameter(InvalidReportParameterException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+        problem.setTitle("Solicitud inválida");
+        problem.setProperty("campo", ex.parameter());
+        return problem;
     }
 
     @ExceptionHandler(PatientNotFoundException.class)
