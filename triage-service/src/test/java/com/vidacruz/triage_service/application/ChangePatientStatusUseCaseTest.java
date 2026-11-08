@@ -50,7 +50,7 @@ class ChangePatientStatusUseCaseTest {
 
     private Patient patient(PatientStatus status) {
         return new Patient(id, "Luis Gómez", 40, "Renovación de recetario",
-                new VitalSigns(70, 115, 75, 99, new BigDecimal("36.4"), 0, 15), TriageLevel.NO_URGENTE_2,
+                new VitalSigns(70, 115, 75, 99, new BigDecimal("36.4"), 0, 15), TriageLevel.NO_URGENTE_2, 120,
                 status, false, NOW_MICROS, NOW_MICROS, 1L);
     }
 

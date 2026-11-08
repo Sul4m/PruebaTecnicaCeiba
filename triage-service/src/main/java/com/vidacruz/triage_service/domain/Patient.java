@@ -10,6 +10,7 @@ public record Patient(
         String chiefComplaint,
         VitalSigns vitalSigns,
         TriageLevel level,
+        int slaMinutes,
         PatientStatus status,
         boolean escalated,
         Instant registeredAt,
@@ -17,11 +18,7 @@ public record Patient(
         long aggregateVersion) {
 
     public Patient withStatus(PatientStatus newStatus, Instant changedAt, long newVersion, boolean newEscalated) {
-        return new Patient(id, fullName, age, chiefComplaint, vitalSigns, level, newStatus, newEscalated,
+        return new Patient(id, fullName, age, chiefComplaint, vitalSigns, level, slaMinutes, newStatus, newEscalated,
                 registeredAt, changedAt, newVersion);
-    }
-
-    public int slaMinutes() {
-        return level.slaMinutes();
     }
 }

@@ -18,7 +18,7 @@ class PacienteDetalleResponseTest {
 
     private static Patient patient() {
         return new Patient(UUID.randomUUID(), "Ana Pérez", 54, "Dolor torácico",
-                new VitalSigns(130, 180, 110, 97, new BigDecimal("36.8"), 8, 15), TriageLevel.CRITICO,
+                new VitalSigns(130, 180, 110, 97, new BigDecimal("36.8"), 8, 15), TriageLevel.CRITICO, 5,
                 PatientStatus.REGISTRADO, false, CHANGED, CHANGED, 1L);
     }
 

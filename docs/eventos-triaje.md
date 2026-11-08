@@ -10,7 +10,7 @@ Contrato de los eventos que publica Triage. Decisión de diseño: [ADR-0005](adr
 | `triaje.eventos.dlt` | Eventos con fallo no reintentable tras `max-attempts` | 3 (réplica 1 en local) |
 
 - **Clave Kafka:** `patientId`. Todos los eventos de un paciente caen en la misma partición y se leen en orden de `aggregateVersion`.
-- **Tipos emitidos hoy:** `paciente_registrado`, `paciente_en_consulta`, `paciente_alta`. `paciente_escalado` llega con la Story 1.5.
+- **Tipos emitidos hoy:** `paciente_registrado`, `paciente_escalado`, `paciente_en_consulta`, `paciente_alta`.
 
 ## Envelope v1
 
@@ -42,6 +42,36 @@ Contrato de los eventos que publica Triage. Decisión de diseño: [ADR-0005](adr
 - `aggregateVersion` es monotónica por paciente (+1 por cada cambio publicable) y la asigna la base de datos en el mismo `UPDATE` del cambio.
 - `occurredAt` es UTC y coincide con el instante de la auditoría.
 - El payload es un snapshot mínimo del nuevo estado. No incluye nombre, edad, queja ni signos vitales.
+
+## paciente_escalado
+
+Se emite una sola vez por paciente cuando, en estado `REGISTRADO`, el tiempo desde el registro **supera estrictamente** su SLA (exactamente igual no escala). El escalamiento no cambia `estado`, `nivel` ni `status_changed_at`; solo marca `escalated` y suma 1 a `aggregateVersion`.
+
+```json
+{"eventId":"…","eventType":"paciente_escalado","schemaVersion":1,"aggregateId":"0b7c2c1e-…","aggregateVersion":2,"occurredAt":"2026-11-08T10:20:30.123456Z","payload":{"patientId":"0b7c2c1e-…","nivel":"CRITICO","estado":"REGISTRADO","escalated":true}}
+```
+
+- La auditoría correspondiente usa `event_type = paciente_escalado` con `previous_status = new_status = REGISTRADO`.
+- Un scheduler reactivo por instancia ejecuta un `UPDATE ... RETURNING` condicional con `FOR UPDATE SKIP LOCKED` y `LIMIT batch-size`; auditoría y outbox se insertan en la misma transacción. Es seguro con varias instancias.
+- Métrica `triage.escalamientos{nivel}` (counter). Los logs solo llevan conteos, sin datos personales.
+
+### Propiedades de escalamiento (`triage.escalation.*`, `triage.sla.minutes.*`)
+
+| Propiedad | Defecto | Descripción |
+|-----------|---------|-------------|
+| `triage.escalation.enabled` | `true` | Activa el scheduler |
+| `triage.escalation.interval` | `30s` | Espera entre ciclos (backoff exponencial acotado a 5 min si un ciclo falla) |
+| `triage.escalation.batch-size` | `100` | Pacientes por lote; si el lote vuelve lleno se repite en el mismo ciclo |
+| `triage.sla.minutes.<NIVEL>` | `5/10/30/60/120` | SLA por nivel (`CRITICO`, `URGENTE`, `URGENTE_2`, `NO_URGENTE`, `NO_URGENTE_2`); se persiste en `patient.sla_minutes` al registrar |
+
+Un valor no positivo impide el arranque.
+
+Notas operativas:
+
+- El SLA queda congelado en `patient.sla_minutes` al registrar: cambiar `triage.sla.minutes.*` solo afecta a pacientes nuevos.
+- El escalamiento usa el reloj de la aplicación; se asume que las instancias tienen NTP sincronizado.
+- Varias instancias con `enabled=true` son seguras gracias a `FOR UPDATE SKIP LOCKED`.
+- Sobrescribir el SLA de niveles con guion bajo (`URGENTE_2`, `NO_URGENTE_2`) mediante variables de entorno NO está verificado; usar un archivo de propiedades hasta verificarlo.
 
 ## Garantías
 
