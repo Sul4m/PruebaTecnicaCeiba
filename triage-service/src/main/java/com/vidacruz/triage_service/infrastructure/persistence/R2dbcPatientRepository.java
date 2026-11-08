@@ -20,23 +20,26 @@ class R2dbcPatientRepository implements PatientRepositoryPort {
     private static final String INSERT = """
             INSERT INTO patient (id, full_name, age, chief_complaint, heart_rate, systolic, diastolic,
                                  spo2, temperature, pain, gcs, level, sla_minutes, status, escalated,
-                                 registered_at, status_changed_at)
+                                 registered_at, status_changed_at, aggregate_version)
             VALUES (:id, :fullName, :age, :complaint, :hr, :sys, :dia, :spo2, :temp, :pain, :gcs,
-                    :level, :sla, :status, :escalated, :registeredAt, :statusChangedAt)
+                    :level, :sla, :status, :escalated, :registeredAt, :statusChangedAt, :version)
             """;
 
     // Los SMALLINT se castean a INT para mapearlos a Integer sin depender del codec int2.
     private static final String SELECT_BY_ID = """
             SELECT id, full_name, age::int AS age, chief_complaint, heart_rate::int AS heart_rate,
                    systolic::int AS systolic, diastolic::int AS diastolic, spo2::int AS spo2, temperature,
-                   pain::int AS pain, gcs::int AS gcs, level, status, escalated, registered_at, status_changed_at
+                   pain::int AS pain, gcs::int AS gcs, level, status, escalated, registered_at, status_changed_at,
+                   aggregate_version
             FROM patient
             WHERE id = :id
             """;
 
     private static final String UPDATE_STATUS = """
-            UPDATE patient SET status = :next, status_changed_at = :changedAt
+            UPDATE patient SET status = :next, status_changed_at = :changedAt,
+                               aggregate_version = aggregate_version + 1
             WHERE id = :id AND status = :expected
+            RETURNING aggregate_version, escalated
             """;
 
     private final DatabaseClient client;
@@ -66,21 +69,23 @@ class R2dbcPatientRepository implements PatientRepositoryPort {
                 .bind("escalated", p.escalated())
                 .bind("registeredAt", OffsetDateTime.ofInstant(p.registeredAt(), ZoneOffset.UTC))
                 .bind("statusChangedAt", OffsetDateTime.ofInstant(p.statusChangedAt(), ZoneOffset.UTC))
+                .bind("version", p.aggregateVersion())
                 .fetch()
                 .rowsUpdated()
                 .thenReturn(p);
     }
 
     @Override
-    public Mono<Boolean> updateStatus(UUID id, PatientStatus expected, PatientStatus next, Instant changedAt) {
+    public Mono<StatusUpdate> updateStatus(UUID id, PatientStatus expected, PatientStatus next, Instant changedAt) {
         return client.sql(UPDATE_STATUS)
                 .bind("id", id)
                 .bind("expected", expected.name())
                 .bind("next", next.name())
                 .bind("changedAt", OffsetDateTime.ofInstant(changedAt, ZoneOffset.UTC))
-                .fetch()
-                .rowsUpdated()
-                .map(rows -> rows > 0);
+                .map((row, meta) -> new StatusUpdate(
+                        row.get("aggregate_version", Long.class),
+                        Boolean.TRUE.equals(row.get("escalated", Boolean.class))))
+                .one();
     }
 
     @Override
@@ -104,7 +109,8 @@ class R2dbcPatientRepository implements PatientRepositoryPort {
                         PatientStatus.valueOf(row.get("status", String.class)),
                         Boolean.TRUE.equals(row.get("escalated", Boolean.class)),
                         row.get("registered_at", OffsetDateTime.class).toInstant(),
-                        row.get("status_changed_at", OffsetDateTime.class).toInstant()))
+                        row.get("status_changed_at", OffsetDateTime.class).toInstant(),
+                        row.get("aggregate_version", Long.class)))
                 .one();
     }
 }

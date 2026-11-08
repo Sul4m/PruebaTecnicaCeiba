@@ -13,11 +13,12 @@ public record Patient(
         PatientStatus status,
         boolean escalated,
         Instant registeredAt,
-        Instant statusChangedAt) {
+        Instant statusChangedAt,
+        long aggregateVersion) {
 
-    public Patient withStatus(PatientStatus newStatus, Instant changedAt) {
-        return new Patient(id, fullName, age, chiefComplaint, vitalSigns, level, newStatus, escalated,
-                registeredAt, changedAt);
+    public Patient withStatus(PatientStatus newStatus, Instant changedAt, long newVersion, boolean newEscalated) {
+        return new Patient(id, fullName, age, chiefComplaint, vitalSigns, level, newStatus, newEscalated,
+                registeredAt, changedAt, newVersion);
     }
 
     public int slaMinutes() {

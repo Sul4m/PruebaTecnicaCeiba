@@ -231,11 +231,11 @@ class PatientStatusChangeIntegrationTest extends PostgresTestSupport {
         java.time.Instant now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
 
         assertThat(patientPort.updateStatus(id, PatientStatus.EN_CONSULTA, PatientStatus.ALTA, now).block())
-                .isFalse();
+                .isNull();
         assertThat(status(id)).isEqualTo("REGISTRADO");
 
         assertThat(patientPort.updateStatus(id, PatientStatus.REGISTRADO, PatientStatus.EN_CONSULTA, now).block())
-                .isTrue();
+                .isEqualTo(new PatientRepositoryPort.StatusUpdate(2L, false));
         assertThat(status(id)).isEqualTo("EN_CONSULTA");
     }
 
