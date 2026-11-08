@@ -5,10 +5,10 @@ TRIAGE_URL="${TRIAGE_URL:-http://localhost:8080}"
 ASSIST_URL="${ASSIST_URL:-http://localhost:8081}"
 
 # --- Pasos Gherkin (solo imprimen el paso para que el log se lea como el .feature) ---
-dado()      { echo "      Dado $*"; }
-cuando()    { echo "      Cuando $*"; }
-entonces()  { echo "      Entonces $*"; }
-y()         { echo "      Y $*"; }
+dado()      { echo "      Given $*"; }
+cuando()    { echo "      When $*"; }
+entonces()  { echo "      Then $*"; }
+y()         { echo "      And $*"; }
 
 fail() { echo "      FALLO: $*" >&2; exit 1; }
 
