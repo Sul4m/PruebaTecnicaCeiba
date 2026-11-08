@@ -1,0 +1,18 @@
+# macOS metadata
+.DS_Store
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# BMAD personal configuration (keep shared project configuration tracked)
+_bmad/config.user.toml
+_bmad/custom/config.user.toml
+
+# Terraform local state and cache
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
