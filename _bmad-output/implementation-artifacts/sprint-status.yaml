@@ -60,4 +60,5 @@ development_status:
   4-2-abstenerse-cuando-no-existe-protocolo: review
   4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: review
   4-4-entregar-la-solución-integrada-y-documentada: backlog
+  4-5-puerta-e2e-con-curl-bdd-y-mbt: review
   epic-4-retrospective: optional

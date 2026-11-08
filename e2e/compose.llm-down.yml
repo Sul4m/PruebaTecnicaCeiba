@@ -1,0 +1,8 @@
+# Override SOLO para la puerta E2E: perfil `azure` con un endpoint inalcanzable y credencial sintetica.
+# Simula "proveedor LLM caido": la consulta debe responder 503 y estado-urgencias seguir vivo.
+services:
+  clinical-assistant:
+    environment:
+      SPRING_PROFILES_ACTIVE: azure
+      AZURE_OPENAI_API_KEY: synthetic-not-a-real-key
+      AZURE_OPENAI_ENDPOINT: http://127.0.0.1:9
