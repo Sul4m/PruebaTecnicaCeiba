@@ -17,4 +17,4 @@ data:
   AZURE_OPENAI_EMBEDDING_DEPLOYMENT: "text-embedding-3-small"
   # Provisional hasta calibrar con text-embedding-3-small real (deferred-work.md).
   ASISTENTE_RAG_THRESHOLD: "${ASISTENTE_RAG_THRESHOLD}"
-  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -XX:+ExitOnOutOfMemoryError"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=50 -XX:+ExitOnOutOfMemoryError"

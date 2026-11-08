@@ -18,10 +18,17 @@ NS="${3:?namespace de Event Hubs}"
 shift 3
 REDIS=""
 ROTATE=""
+# Validar TODOS los argumentos antes de escribir nada: la única opción es --rotate-api-key y a lo sumo
+# un argumento posicional (nombre de Redis).
 for arg in "$@"; do
   case "$arg" in
     --rotate-api-key) ROTATE="--rotate-api-key" ;;
-    *) REDIS="$arg" ;;
+    -*) echo "Error: opción desconocida '$arg' (solo se admite --rotate-api-key)" >&2; exit 2 ;;
+    *)
+      if [[ -n "$REDIS" ]]; then
+        echo "Error: argumento inesperado '$arg' (ya se indicó el nombre de Redis '$REDIS')" >&2; exit 2
+      fi
+      REDIS="$arg" ;;
   esac
 done
 

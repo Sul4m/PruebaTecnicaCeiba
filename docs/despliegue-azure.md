@@ -135,7 +135,7 @@ Qué añade: Azure Managed Redis (`redis.tf`), cuenta Azure OpenAI con los deplo
 
 ### Orden de pasos para aplicar
 
-1. **Terraform (administrador, a mano; no por CI)**: el plan cambia la condición ABAC de `ci_terraform_apply_rbac_admin` (añade el rol `Cognitive Services OpenAI User`, que el apply de CI necesita para asignarlo), lo que **reemplaza** esa asignación de la propia identidad de apply; un apply desde CI no puede modificarse a sí mismo. Por eso el primer apply de 3.4 lo hace el administrador humano:
+1. **Terraform: el PRIMER apply de 3.4 lo hace el administrador humano (Owner) manualmente, no el CI**: el plan cambia la condición ABAC de `ci_terraform_apply_rbac_admin` (añade el rol `Cognitive Services OpenAI User`, que el apply de CI necesita para asignarlo), lo que **reemplaza** esa asignación de la propia identidad de apply; un apply desde CI no puede modificarse a sí mismo. Después de ese apply el CI ya puede aplicar normalmente; no se amplían privilegios (el único cambio es un rol de solo inferencia en la lista cerrada de la condición):
    ```bash
    cd infra/terraform && terraform init -backend-config=backend.hcl && terraform plan -out=tfplan && terraform apply tfplan
    ```
@@ -177,11 +177,11 @@ Notas: la identidad `id-asistente` y la de Triage tienen `Key Vault Secrets User
 
 ### Ingress y SSE
 
-El Ingress del Asistente (namespace `asistente`) usa el mismo `nginx-triage` y host, path `/asistente`, **sin sección `tls`**: ingress-nginx fusiona los Ingress del mismo host y reutiliza el certificado `triage-tls` (no se pide otro certificado). El Ingress de Triage no se toca, así que `/triage/alertas/stream` conserva `proxy-buffering: off` y timeouts de 3600 s (annotations por location). Supuesto sin verificar: que la fusión por host reutilice el certificado como se espera; alternativa si falla: añadir `tls` + `cert-manager.io/cluster-issuer` al Ingress del Asistente.
+El Ingress del Asistente (namespace `asistente`) usa el mismo `nginx-triage` y host, path `/asistente`, con su propio TLS: `tls.secretName: asistente-tls` y la anotación de cert-manager (`letsencrypt-prod`). No reutiliza `triage-tls` porque ingress-nginx lee el secreto en el namespace del Ingress y ese secreto vive en `triage`; así tampoco depende del orden de aplicación. Los dos certificados cubren el mismo host (dos challenges HTTP-01); el servidor de nginx es por host y los paths son distintos. El Ingress de Triage no se toca, así que `/triage/alertas/stream` conserva `proxy-buffering: off` y timeouts de 3600 s (annotations por location). Sin verificar contra el clúster real: que la emisión de dos certificados para el mismo host no choque en HTTP-01.
 
 ### Capacidad del clúster
 
-Triage pide 250m CPU/512Mi; el Asistente 100m CPU/384Mi (límites 500m/640Mi), `replicas: 1`, `Recreate`. Con 2 nodos de 2 vCPU debería programarse en el segundo nodo; si queda `Pending`, revisar `kubectl describe pod` y reducir requests.
+Triage pide 250m CPU/512Mi; el Asistente 100m CPU/384Mi (límites 500m/768Mi), `replicas: 1`, `Recreate`. Con 2 nodos de 2 vCPU debería programarse en el segundo nodo; si queda `Pending`, revisar `kubectl describe pod` y reducir requests.
 
 ### Costos estimados adicionales (ESTIMACIONES, verificar en la calculadora de Azure)
 
@@ -199,6 +199,6 @@ El total real del entorno (2 nodos D2s_v6, PostgreSQL `GP_Standard_D2ds_v4`, Eve
 - `terraform apply`: cuota/disponibilidad de `Balanced_B0` en `eastus2`, de la capacidad de los deployments y de `GlobalStandard` en la suscripción; que `azurerm_managed_redis` acepte `EnterpriseCluster` con `high_availability_enabled = false`; versión `2026-03-17` de gpt-5.4-mini (tomada de `az cognitiveservices model list`).
 - `az redisenterprise database list-keys` (nombre de comando/forma de la salida para Managed Redis) en `bootstrap-secrets.sh`.
 - Conexión TLS+auth a Redis desde Lettuce, SASL_SSL a Event Hubs del consumidor, token Entra contra OpenAI desde el pod y los timeouts del cliente Azure.
-- Reutilización del certificado en el Ingress del Asistente y que el pod programe junto a Triage.
+- Emisión del certificado `asistente-tls` junto al de Triage y que el pod programe junto a Triage.
 - Umbral de similitud (0,45) sin calibrar con `text-embedding-3-small` real.
 - El workflow ampliado (no ejecutado).

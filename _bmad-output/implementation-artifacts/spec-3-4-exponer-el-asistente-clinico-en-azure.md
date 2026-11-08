@@ -20,14 +20,16 @@ El Asistente accesible por HTTPS en el mismo host que Triage (`/asistente`), con
 
 - Terraform: `redis.tf` (Azure Managed Redis `Balanced_B0`, TLS, access key), `openai.tf` (cuenta OpenAI con claves locales desactivadas, 2 deployments, rol `Cognitive Services OpenAI User` para la identidad del Asistente), consumer group en `triaje.eventos`, `asistente` en `local.workloads`, rol OpenAI añadido a los roles asignables por la condición ABAC del apply.
 - `scripts/bootstrap-secrets.sh`: `asistente-api-key`, `asistente-eventhubs-connection-string` (SAS propia), `redis-password`. `scripts/render-k8s.sh`: variables nuevas.
-- `k8s/asistente/`: Namespace, ServiceAccount, ConfigMap, SecretProviderClass, Service, Ingress (host compartido, TLS reutilizado), Deployment (1 réplica, requests 100m/384Mi).
+- `k8s/asistente/`: Namespace, ServiceAccount, ConfigMap, SecretProviderClass, Service, Ingress (host compartido, TLS propio), Deployment (1 réplica, requests 100m/384Mi).
 - App: `application-azure.yaml` (SASL_SSL a Event Hubs, Redis TLS+auth sin defaults, OpenAI por Entra con `api-key` vacío, umbral por env, `assistant.projection.create-topics=false`) y `KafkaProjectionConfig` condicional con `KafkaProjectionConfigTest`.
 - CI/CD: `triage.yml` (ahora "deploy") prueba ambos servicios, valida ambos manifests, construye/publica ambas imágenes con tag SHA inmutable y aplica ambos, con la misma identidad `id-gh-deploy` (sin ampliar privilegios; la identidad de PR no se toca).
 
 ## Decisiones
 
 - Entra ID para Azure OpenAI (sin clave en ningún lado); access key para Redis (Lettuce no soporta Entra sin librería); SAS por servicio para Event Hubs (diferido existente).
-- El primer apply de 3.4 lo hace el administrador: cambia la condición ABAC y reemplaza la asignación de la propia identidad de apply.
+- El PRIMER apply de 3.4 lo hace el administrador humano (Owner) manualmente: cambia la condición ABAC y reemplaza la asignación RBAC Administrator de la identidad de CI, que no puede reescribirse a sí misma. Después el CI ya puede aplicar. Sin ampliar privilegios.
+- Ingress del Asistente con TLS propio (`asistente-tls`, cert-manager): ingress-nginx lee el secreto en el namespace del Ingress, por lo que no se puede reutilizar `triage-tls`.
+- Deployment: límite 768Mi, requests 100m/384Mi, `MaxRAMPercentage=50`.
 
 ## Pendiente para `done`
 
@@ -36,4 +38,4 @@ Aplicar Terraform y `bootstrap-secrets.sh`, crear el namespace, desplegar, y ver
 ## Diferidos que toca esta historia
 
 - Cerrados en código: Redis auth+TLS exigidos en el perfil `azure`; `SPRING_PROFILES_ACTIVE=azure` en el ConfigMap; topics por Terraform; consumer group por Terraform.
-- Abiertos: calibrar umbral con embeddings reales; roles Data Receiver con Workload Identity para Event Hubs; vault/secretos por servicio.
+- Abiertos: hilos/cuotas por API key del chat; calibrar umbral con embeddings reales (tras el despliegue); roles Data Receiver con Workload Identity para Event Hubs; vault/secretos por servicio.
