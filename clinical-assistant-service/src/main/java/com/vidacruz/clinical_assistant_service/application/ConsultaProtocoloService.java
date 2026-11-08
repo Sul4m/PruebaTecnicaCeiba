@@ -44,9 +44,16 @@ public class ConsultaProtocoloService {
             Set<String> recuperados = new LinkedHashSet<>();
             fuentes.forEach(f -> recuperados.add(f.protocolo()));
             return generation.generate(pregunta, context)
-                    .map(respuesta -> esSinProtocolo(respuesta) || !citaSoloRecuperados(respuesta, recuperados)
-                            ? ConsultaResultado.sinProtocolo()
-                            : new ConsultaResultado(respuesta, fuentes))
+                    .map(respuesta -> {
+                        if (esSinProtocolo(respuesta) || !citaSoloRecuperados(respuesta, recuperados)) {
+                            return ConsultaResultado.sinProtocolo();
+                        }
+                        // RN-05: sustento lexico determinista; fuentes = solo secciones que aportan a la respuesta.
+                        List<FuenteProtocolo> sustento = RespuestaSustentada.fuentesQueSustentan(respuesta, context);
+                        return sustento.isEmpty()
+                                ? ConsultaResultado.sinProtocolo()
+                                : new ConsultaResultado(respuesta, sustento);
+                    })
                     .defaultIfEmpty(ConsultaResultado.sinProtocolo());
         });
     }
