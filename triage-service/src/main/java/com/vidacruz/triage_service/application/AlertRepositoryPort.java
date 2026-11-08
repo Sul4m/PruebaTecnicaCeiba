@@ -4,6 +4,7 @@ import com.vidacruz.triage_service.domain.MedicalAlert;
 import java.time.Instant;
 import java.util.List;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public interface AlertRepositoryPort {
 
@@ -16,4 +17,7 @@ public interface AlertRepositoryPort {
 
     /** Alertas con cursor mayor a {@code cursor}, ascendentes, hasta {@code limit}. */
     Flux<MedicalAlert> findAfter(long cursor, int limit);
+
+    /** Mayor cursor persistido, o 0 si no hay alertas. */
+    Mono<Long> findMaxCursor();
 }

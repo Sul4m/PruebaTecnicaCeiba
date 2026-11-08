@@ -37,6 +37,8 @@ class R2dbcAlertRepository implements AlertRepositoryPort {
             LIMIT :limit
             """;
 
+    private static final String SELECT_MAX = "SELECT COALESCE(MAX(delivery_cursor), 0) AS max_cursor FROM medical_alert";
+
     private final DatabaseClient client;
 
     R2dbcAlertRepository(DatabaseClient client) {
@@ -85,5 +87,10 @@ class R2dbcAlertRepository implements AlertRepositoryPort {
                         TriageLevel.valueOf(row.get("level", String.class)),
                         row.get("created_at", OffsetDateTime.class).toInstant()))
                 .all();
+    }
+
+    @Override
+    public Mono<Long> findMaxCursor() {
+        return client.sql(SELECT_MAX).map((row, meta) -> row.get("max_cursor", Long.class)).one();
     }
 }
