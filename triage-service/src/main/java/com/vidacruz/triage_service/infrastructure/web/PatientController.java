@@ -1,6 +1,8 @@
 package com.vidacruz.triage_service.infrastructure.web;
 
+import com.vidacruz.triage_service.application.ChangePatientStatusUseCase;
 import com.vidacruz.triage_service.application.GetPatientUseCase;
+import com.vidacruz.triage_service.application.InvalidStatusTransitionException;
 import com.vidacruz.triage_service.application.PatientNotFoundException;
 import com.vidacruz.triage_service.application.RegisterPatientCommand;
 import com.vidacruz.triage_service.application.RegisterPatientUseCase;
@@ -12,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,11 +31,14 @@ class PatientController {
 
     private final RegisterPatientUseCase registerPatient;
     private final GetPatientUseCase getPatient;
+    private final ChangePatientStatusUseCase changeStatus;
     private final Clock clock;
 
-    PatientController(RegisterPatientUseCase registerPatient, GetPatientUseCase getPatient, Clock clock) {
+    PatientController(RegisterPatientUseCase registerPatient, GetPatientUseCase getPatient,
+            ChangePatientStatusUseCase changeStatus, Clock clock) {
         this.registerPatient = registerPatient;
         this.getPatient = getPatient;
+        this.changeStatus = changeStatus;
         this.clock = clock;
     }
 
@@ -43,6 +49,18 @@ class PatientController {
                 .doOnNext(p -> log.info("Paciente consultado id={} estado={}", p.id(), p.status()))
                 .doOnError(PatientNotFoundException.class, e -> log.info("Paciente no encontrado id={}", id))
                 .map(p -> PacienteDetalleResponse.from(p, clock.instant()));
+    }
+
+    @PatchMapping("/{id}/estado")
+    Mono<PacienteDetalleResponse> changeStatus(@PathVariable("id") UUID id,
+            @Valid @RequestBody CambiarEstadoRequest request) {
+        return changeStatus.change(id, request.estado())
+                .doOnError(InvalidStatusTransitionException.class,
+                        e -> log.info("Transición rechazada id={} actual={} solicitado={}", id, e.current(),
+                                e.requested()))
+                .doOnNext(c -> log.info("Estado de paciente cambiado id={} anterior={} nuevo={}", c.patient().id(),
+                        c.previous(), c.patient().status()))
+                .map(c -> PacienteDetalleResponse.from(c.patient(), clock.instant()));
     }
 
     @PostMapping

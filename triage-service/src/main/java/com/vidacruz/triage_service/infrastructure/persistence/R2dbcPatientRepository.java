@@ -6,6 +6,7 @@ import com.vidacruz.triage_service.domain.PatientStatus;
 import com.vidacruz.triage_service.domain.TriageLevel;
 import com.vidacruz.triage_service.domain.VitalSigns;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -31,6 +32,11 @@ class R2dbcPatientRepository implements PatientRepositoryPort {
                    pain::int AS pain, gcs::int AS gcs, level, status, escalated, registered_at, status_changed_at
             FROM patient
             WHERE id = :id
+            """;
+
+    private static final String UPDATE_STATUS = """
+            UPDATE patient SET status = :next, status_changed_at = :changedAt
+            WHERE id = :id AND status = :expected
             """;
 
     private final DatabaseClient client;
@@ -63,6 +69,18 @@ class R2dbcPatientRepository implements PatientRepositoryPort {
                 .fetch()
                 .rowsUpdated()
                 .thenReturn(p);
+    }
+
+    @Override
+    public Mono<Boolean> updateStatus(UUID id, PatientStatus expected, PatientStatus next, Instant changedAt) {
+        return client.sql(UPDATE_STATUS)
+                .bind("id", id)
+                .bind("expected", expected.name())
+                .bind("next", next.name())
+                .bind("changedAt", OffsetDateTime.ofInstant(changedAt, ZoneOffset.UTC))
+                .fetch()
+                .rowsUpdated()
+                .map(rows -> rows > 0);
     }
 
     @Override

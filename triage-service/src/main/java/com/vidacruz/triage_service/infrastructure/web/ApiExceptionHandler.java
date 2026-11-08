@@ -1,6 +1,7 @@
 package com.vidacruz.triage_service.infrastructure.web;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.vidacruz.triage_service.application.InvalidStatusTransitionException;
 import com.vidacruz.triage_service.application.PatientNotFoundException;
 import java.util.Comparator;
 import java.util.List;
@@ -75,6 +76,15 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     ProblemDetail handlePatientNotFound(PatientNotFoundException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problem.setTitle("Paciente no encontrado");
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidStatusTransitionException.class)
+    ProblemDetail handleInvalidTransition(InvalidStatusTransitionException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+        problem.setTitle("Transición de estado inválida");
+        problem.setProperty("estadoActual", ex.current());
+        problem.setProperty("estadoSolicitado", ex.requested());
         return problem;
     }
 

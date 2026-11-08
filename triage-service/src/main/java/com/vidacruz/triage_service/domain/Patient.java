@@ -15,6 +15,11 @@ public record Patient(
         Instant registeredAt,
         Instant statusChangedAt) {
 
+    public Patient withStatus(PatientStatus newStatus, Instant changedAt) {
+        return new Patient(id, fullName, age, chiefComplaint, vitalSigns, level, newStatus, escalated,
+                registeredAt, changedAt);
+    }
+
     public int slaMinutes() {
         return level.slaMinutes();
     }
