@@ -37,6 +37,17 @@ services:
       retries: 10
       start_period: 20s
 
+  redis:
+    image: redis:7.4
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - assistant-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   triage:
     build: ./triage-service
     depends_on:
@@ -55,5 +66,21 @@ services:
     ports:
       - "8080:8080"
 
+  clinical-assistant:
+    build: ./clinical-assistant-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ASISTENTE_API_KEY: ${ASISTENTE_API_KEY:?define ASISTENTE_API_KEY en .env}
+    ports:
+      - "8081:8081"
+
 volumes:
   triage-pgdata:
+  assistant-redisdata:

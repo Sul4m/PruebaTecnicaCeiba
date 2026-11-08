@@ -10,6 +10,7 @@ import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.server.ServerWebInputException;
 
 import com.vidacruz.clinical_assistant_service.domain.AssistantUnavailableException;
+import com.vidacruz.clinical_assistant_service.domain.ProyeccionNoDisponibleException;
 
 /**
  * Errores como ProblemDetail. El detalle nunca incluye el texto de la pregunta (PII/clinico) ni se loguea.
@@ -35,6 +36,14 @@ public class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> onUnavailable(AssistantUnavailableException ex) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
                 "El asistente no esta disponible temporalmente. Intente nuevamente mas tarde.");
+        pd.setTitle("Servicio no disponible");
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(pd);
+    }
+
+    @ExceptionHandler(ProyeccionNoDisponibleException.class)
+    ResponseEntity<ProblemDetail> onProjectionUnavailable(ProyeccionNoDisponibleException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+                "La vista de urgencias no esta disponible temporalmente. Intente nuevamente mas tarde.");
         pd.setTitle("Servicio no disponible");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(pd);
     }
