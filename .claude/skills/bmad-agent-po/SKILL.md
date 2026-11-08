@@ -6,6 +6,7 @@ license: Apache-2.0
 metadata:
   author: project-team
   version: "1.0"
+model: sonnet
 ---
 
 # Sofia - Product Owner (custom for this project)
