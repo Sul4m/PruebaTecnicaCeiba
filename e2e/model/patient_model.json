@@ -1,0 +1,248 @@
+{
+ "_doc": "Modelo de estados del paciente (RF-02/RF-03/RN-03). Estado = (estado, escalado). PATCH:X envia {estado:X}; DESCONOCIDO envia un valor fuera del enum (400). WAIT_SLA deja pasar el SLA y varios intervalos del scheduler: solo REGISTRADO sin escalar pasa a escalado; en EN_CONSULTA/ALTA nunca se escala (RN-03); escalar no cambia el estado.",
+ "initial": "R0",
+ "states": [
+  {
+   "id": "R0",
+   "estado": "REGISTRADO",
+   "escalado": false
+  },
+  {
+   "id": "R1",
+   "estado": "REGISTRADO",
+   "escalado": true
+  },
+  {
+   "id": "C0",
+   "estado": "EN_CONSULTA",
+   "escalado": false
+  },
+  {
+   "id": "C1",
+   "estado": "EN_CONSULTA",
+   "escalado": true
+  },
+  {
+   "id": "A0",
+   "estado": "ALTA",
+   "escalado": false
+  },
+  {
+   "id": "A1",
+   "estado": "ALTA",
+   "escalado": true
+  }
+ ],
+ "transitions": [
+  {
+   "from": "R0",
+   "action": "PATCH:REGISTRADO",
+   "to": "R0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "R0",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "C0",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "R0",
+   "action": "PATCH:ALTA",
+   "to": "A0",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "R0",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "R0",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "R0",
+   "action": "WAIT_SLA",
+   "to": "R1",
+   "http": null,
+   "kind": "tiempo"
+  },
+  {
+   "from": "R1",
+   "action": "PATCH:REGISTRADO",
+   "to": "R1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "R1",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "C1",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "R1",
+   "action": "PATCH:ALTA",
+   "to": "A1",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "R1",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "R1",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "R1",
+   "action": "WAIT_SLA",
+   "to": "R1",
+   "http": null,
+   "kind": "tiempo"
+  },
+  {
+   "from": "C0",
+   "action": "PATCH:REGISTRADO",
+   "to": "C0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "C0",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "C0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "C0",
+   "action": "PATCH:ALTA",
+   "to": "A0",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "C0",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "C0",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "C0",
+   "action": "WAIT_SLA",
+   "to": "C0",
+   "http": null,
+   "kind": "tiempo"
+  },
+  {
+   "from": "C1",
+   "action": "PATCH:REGISTRADO",
+   "to": "C1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "C1",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "C1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "C1",
+   "action": "PATCH:ALTA",
+   "to": "A1",
+   "http": 200,
+   "kind": "valida"
+  },
+  {
+   "from": "C1",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "C1",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "C1",
+   "action": "WAIT_SLA",
+   "to": "C1",
+   "http": null,
+   "kind": "tiempo"
+  },
+  {
+   "from": "A0",
+   "action": "PATCH:REGISTRADO",
+   "to": "A0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A0",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "A0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A0",
+   "action": "PATCH:ALTA",
+   "to": "A0",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A0",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "A0",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "A0",
+   "action": "WAIT_SLA",
+   "to": "A0",
+   "http": null,
+   "kind": "tiempo"
+  },
+  {
+   "from": "A1",
+   "action": "PATCH:REGISTRADO",
+   "to": "A1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A1",
+   "action": "PATCH:EN_CONSULTA",
+   "to": "A1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A1",
+   "action": "PATCH:ALTA",
+   "to": "A1",
+   "http": 409,
+   "kind": "invalida"
+  },
+  {
+   "from": "A1",
+   "action": "PATCH:DESCONOCIDO",
+   "to": "A1",
+   "http": 400,
+   "kind": "invalida"
+  },
+  {
+   "from": "A1",
+   "action": "WAIT_SLA",
+   "to": "A1",
+   "http": null,
+   "kind": "tiempo"
+  }
+ ]
+}
