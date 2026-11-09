@@ -60,6 +60,12 @@ variable "github_repository" {
   default     = ""
 }
 
+variable "github_subject_prefix" {
+  description = "Prefijo del subject OIDC de GitHub, p. ej. repo:owner@<ownerId>/repo@<repoId> (subject inmutable). Vacío = repo:<github_repository>."
+  type        = string
+  default     = ""
+}
+
 variable "admin_object_id" {
   description = "Object ID de Entra ID del administrador humano (az ad signed-in-user show --query id). Recibe admin de AKS y Secrets Officer; es explícito para que un apply desde CI no reemplace esos roles."
   type        = string

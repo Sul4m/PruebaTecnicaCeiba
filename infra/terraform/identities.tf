@@ -35,10 +35,12 @@ resource "azurerm_role_assignment" "workload_kv_reader" {
 # las identidades con escritura.
 
 locals {
-  ci_enabled   = var.github_repository != ""
-  state_scoped = local.ci_enabled && var.tfstate_storage_account_id != ""
-  gh_issuer    = "https://token.actions.githubusercontent.com"
-  gh_audience  = ["api://AzureADTokenExchange"]
+  ci_enabled = var.github_repository != ""
+  # GitHub emite el subject OIDC inmutable (repo:<owner>@<id>/<repo>@<id>) en repos nuevos; si no se define, el clásico.
+  gh_subject_prefix = var.github_subject_prefix != "" ? var.github_subject_prefix : "repo:${var.github_repository}"
+  state_scoped      = local.ci_enabled && var.tfstate_storage_account_id != ""
+  gh_issuer         = "https://token.actions.githubusercontent.com"
+  gh_audience       = ["api://AzureADTokenExchange"]
 }
 
 data "azurerm_role_definition" "assignable" {
@@ -86,7 +88,7 @@ resource "azurerm_federated_identity_credential" "ci_deploy" {
   parent_id           = azurerm_user_assigned_identity.ci_deploy[0].id
   audience            = local.gh_audience
   issuer              = local.gh_issuer
-  subject             = "repo:${var.github_repository}:environment:azure"
+  subject             = "${local.gh_subject_prefix}:environment:azure"
 }
 
 resource "azurerm_role_assignment" "ci_deploy_acr_push" {
@@ -127,7 +129,7 @@ resource "azurerm_federated_identity_credential" "ci_terraform_apply" {
   parent_id           = azurerm_user_assigned_identity.ci_terraform_apply[0].id
   audience            = local.gh_audience
   issuer              = local.gh_issuer
-  subject             = "repo:${var.github_repository}:environment:azure-infra"
+  subject             = "${local.gh_subject_prefix}:environment:azure-infra"
 }
 
 resource "azurerm_role_assignment" "ci_terraform_apply_contributor" {
@@ -186,7 +188,7 @@ resource "azurerm_federated_identity_credential" "ci_terraform_plan" {
   parent_id           = azurerm_user_assigned_identity.ci_terraform_plan[0].id
   audience            = local.gh_audience
   issuer              = local.gh_issuer
-  subject             = "repo:${var.github_repository}:pull_request"
+  subject             = "${local.gh_subject_prefix}:pull_request"
 }
 
 resource "azurerm_role_assignment" "ci_terraform_plan_reader" {
