@@ -49,4 +49,4 @@ assistant:
     create-topics: false
   rag:
     # Calibrado con text-embedding-3-small real (2026-11-08): consultas legítimas >= 0.618, irrelevantes <= 0.503 (0.55 deja margen); casos 0.58-0.59 los cubren el prompt y RespuestaSustentada.
-    similarity-threshold: 
+    similarity-threshold: ${ASISTENTE_RAG_THRESHOLD:0.55}
