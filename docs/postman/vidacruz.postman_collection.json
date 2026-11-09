@@ -1,0 +1,2136 @@
+{
+  "info": {
+    "name": "VidaCruz — Triage + Asistente Clínico",
+    "description": "Colección de validación manual (misma cobertura que la puerta E2E con curl).\n\n1) Importa también el entorno (Azure o Local).\n2) Pega las API keys en el entorno (campos triageApiKey y asistenteApiKey, tipo secret). Nunca las guardes en la colección.\n3) Ejecuta las carpetas EN ORDEN (0 → 9). Cada petición lleva pruebas automáticas (pestaña Tests/Test Results).\n\nAzure: las claves están en Key Vault (kv-ptc-a01): az keyvault secret show --vault-name kv-ptc-a01 --name triage-api-key --query value -o tsv",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Seguridad (API key)",
+      "description": "Sin clave o con clave incorrecta ambos servicios responden 401 con cuerpo vacío.",
+      "item": [
+        {
+          "name": "Triage sin X-API-Key → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "00000000-0000-0000-0000-000000000000"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Triage con clave incorrecta → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{claveIncorrecta}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "00000000-0000-0000-0000-000000000000"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Asistente sin X-API-Key → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Asistente con la clave de Triage → 401 (cada servicio tiene su clave)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Asistente con su clave → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Registro y clasificación (RF-01, RN-01, RN-02)",
+      "description": "Casos E1–E6 del enunciado. Cada uno guarda su id (id_E1…id_E6) para los pasos siguientes. Dejan pacientes REGISTRADO: se cierran en la carpeta 9.",
+      "item": [
+        {
+          "name": "E1 → CRITICO (SLA 5 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = CRITICO', () => pm.expect(b.nivel).to.eql('CRITICO'));",
+                  "pm.test('SLA = 5 min', () => pm.expect(b.slaMinutos).to.eql(5));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E1', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "E2 → URGENTE (SLA 10 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = URGENTE', () => pm.expect(b.nivel).to.eql('URGENTE'));",
+                  "pm.test('SLA = 10 min', () => pm.expect(b.slaMinutos).to.eql(10));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E2', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Bruno Diaz\",\n  \"edad\": 47,\n  \"quejaPrincipal\": \"Dificultad para respirar\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 95,\n    \"presionSistolica\": 150,\n    \"presionDiastolica\": 95,\n    \"spo2\": 91,\n    \"temperatura\": 37,\n    \"dolor\": 4,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "E3 → URGENTE_2 (SLA 30 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = URGENTE_2', () => pm.expect(b.nivel).to.eql('URGENTE_2'));",
+                  "pm.test('SLA = 30 min', () => pm.expect(b.slaMinutos).to.eql(30));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E3', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Carla Mora\",\n  \"edad\": 33,\n  \"quejaPrincipal\": \"Fiebre\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 88,\n    \"presionSistolica\": 130,\n    \"presionDiastolica\": 85,\n    \"spo2\": 98,\n    \"temperatura\": 38.2,\n    \"dolor\": 6,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "E4 → NO_URGENTE (SLA 60 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = NO_URGENTE', () => pm.expect(b.nivel).to.eql('NO_URGENTE'));",
+                  "pm.test('SLA = 60 min', () => pm.expect(b.slaMinutos).to.eql(60));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E4', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Diego Rios\",\n  \"edad\": 28,\n  \"quejaPrincipal\": \"Herida por cortar\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 72,\n    \"presionSistolica\": 120,\n    \"presionDiastolica\": 80,\n    \"spo2\": 99,\n    \"temperatura\": 36.5,\n    \"dolor\": 2,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "E5 → NO_URGENTE_2 (SLA 120 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = NO_URGENTE_2', () => pm.expect(b.nivel).to.eql('NO_URGENTE_2'));",
+                  "pm.test('SLA = 120 min', () => pm.expect(b.slaMinutos).to.eql(120));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E5', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Elena Soto\",\n  \"edad\": 61,\n  \"quejaPrincipal\": \"Renovación de recetario\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 70,\n    \"presionSistolica\": 115,\n    \"presionDiastolica\": 75,\n    \"spo2\": 99,\n    \"temperatura\": 36.4,\n    \"dolor\": 0,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "E6 → CRITICO (SLA 5 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test('nivel = CRITICO', () => pm.expect(b.nivel).to.eql('CRITICO'));",
+                  "pm.test('SLA = 5 min', () => pm.expect(b.slaMinutos).to.eql(5));",
+                  "pm.test('estado = REGISTRADO', () => pm.expect(b.estado).to.eql('REGISTRADO'));",
+                  "pm.test('trae id y fechaRegistro', () => { pm.expect(b.id).to.be.a('string'); pm.expect(b.fechaRegistro).to.be.a('string'); });",
+                  "pm.collectionVariables.set('id_E6', b.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Fabio Luna\",\n  \"edad\": 70,\n  \"quejaPrincipal\": \"Inconsciente\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 35,\n    \"presionSistolica\": 80,\n    \"presionDiastolica\": 50,\n    \"spo2\": 85,\n    \"temperatura\": 35.9,\n    \"dolor\": 0,\n    \"gcs\": 6\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Validación de entradas (RF-01)",
+      "description": "Todo valor fuera de rango debe dar 400 y no crear paciente.",
+      "item": [
+        {
+          "name": "FC 300 (rango 20–250) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 300,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Sistólica 50 (rango 60–260) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 50,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Diastólica ≥ sistólica → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 200,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "SpO2 60 (rango 70–100) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 60,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Temperatura 45 (rango 34–42) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 45,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Dolor 11 (rango 0–10) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 11,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GCS 2 (rango 3–15) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 2\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Edad 121 (rango 0–120) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Ana Perez\",\n  \"edad\": 121,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Nombre de 2 caracteres (mín. 3) → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Al\",\n  \"edad\": 54,\n  \"quejaPrincipal\": \"Dolor torácico\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 130,\n    \"presionSistolica\": 180,\n    \"presionDiastolica\": 110,\n    \"spo2\": 97,\n    \"temperatura\": 36.8,\n    \"dolor\": 8,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cuerpo vacío {} → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Consulta y cambio de estado (RF-02, RF-03)",
+      "description": "REGISTRADO → EN_CONSULTA → ALTA. Una transición desde ALTA (estado terminal) da 409. Usa el paciente E4.",
+      "item": [
+        {
+          "name": "Consultar E4 → 200 REGISTRADO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nivel NO_URGENTE y estado REGISTRADO', () => { const b = pm.response.json(); pm.expect(b.nivel).to.eql('NO_URGENTE'); pm.expect(b.estado).to.eql('REGISTRADO'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E4}}",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E4}}"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Paciente inexistente → 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "00000000-0000-0000-0000-000000000000"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "REGISTRADO → EN_CONSULTA → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('estado EN_CONSULTA', () => pm.expect(pm.response.json().estado).to.eql('EN_CONSULTA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E4}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E4}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"EN_CONSULTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "EN_CONSULTA → ALTA → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('estado ALTA', () => pm.expect(pm.response.json().estado).to.eql('ALTA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E4}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E4}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"ALTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "ALTA es terminal: ALTA → EN_CONSULTA → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E4}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E4}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"EN_CONSULTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Estado desconocido → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E4}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E4}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"INVENTADO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Asistente clínico RAG (RF-04, RN-05)",
+      "description": "Llama al modelo real gpt-5.4-mini. La redacción puede variar entre ejecuciones; lo que no varía es la cita del protocolo. Sin protocolo en el corpus solo debe salir el aviso.",
+      "item": [
+        {
+          "name": "PROTO-001 · crisis hipertensiva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('respuesta con texto', () => pm.expect(b.respuesta).to.be.a('string').and.not.empty);",
+                  "pm.test('cita PROTO-001 (RN-05)', () => pm.expect(b.fuentes.map(f => f.protocolo)).to.include('PROTO-001'));",
+                  "pm.test('cada fuente trae sección', () => b.fuentes.forEach(f => pm.expect(f.seccion).to.be.a('string').and.not.empty));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"¿Cuáles son las medidas iniciales ante una crisis hipertensiva?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PROTO-002 · sepsis (qSOFA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('respuesta con texto', () => pm.expect(b.respuesta).to.be.a('string').and.not.empty);",
+                  "pm.test('cita PROTO-002 (RN-05)', () => pm.expect(b.fuentes.map(f => f.protocolo)).to.include('PROTO-002'));",
+                  "pm.test('cada fuente trae sección', () => b.fuentes.forEach(f => pm.expect(f.seccion).to.be.a('string').and.not.empty));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"¿Cómo identifico sepsis temprana con qSOFA?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PROTO-003 · deshidratación pediátrica",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('respuesta con texto', () => pm.expect(b.respuesta).to.be.a('string').and.not.empty);",
+                  "pm.test('cita PROTO-003 (RN-05)', () => pm.expect(b.fuentes.map(f => f.protocolo)).to.include('PROTO-003'));",
+                  "pm.test('cada fuente trae sección', () => b.fuentes.forEach(f => pm.expect(f.seccion).to.be.a('string').and.not.empty));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"¿Cómo clasifico la deshidratación en un niño?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Abstención · diabetes tipo 2 (no está en el corpus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('solo el aviso, sin fuentes', () => { pm.expect(b.respuesta).to.eql('No existe un protocolo disponible para responder esta consulta.'); pm.expect(b.fuentes).to.eql([]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"¿Cuál es el tratamiento de primera línea para la diabetes tipo 2?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Abstención · dolor torácico (no está en el corpus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('solo el aviso, sin fuentes', () => { pm.expect(b.respuesta).to.eql('No existe un protocolo disponible para responder esta consulta.'); pm.expect(b.fuentes).to.eql([]); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"¿Qué hago ante un dolor torácico con sospecha de infarto?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Pregunta vacía → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/consulta",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "consulta"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pregunta\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Flujo integrado Triage → Event Hubs → Asistente → Redis (RF-03)",
+      "description": "Ejecutar EN ORDEN y esperar ~5 s entre el paso 2 y el 3, y entre el 4 y el 5 (el conteo llega por Kafka, es eventual).",
+      "item": [
+        {
+          "name": "1. Conteo ANTES (guarda el total)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('totalAntes', pm.response.json().totalActivos); console.log('Total antes:', pm.response.json().totalActivos);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "2. Registrar paciente URGENTE (E2 de nuevo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 201 URGENTE', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().nivel).to.eql('URGENTE'); });",
+                  "pm.collectionVariables.set('id_flujo', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombreCompleto\": \"Gabriel Vega\",\n  \"edad\": 39,\n  \"quejaPrincipal\": \"Dificultad para respirar\",\n  \"signosVitales\": {\n    \"frecuenciaCardiaca\": 95,\n    \"presionSistolica\": 150,\n    \"presionDiastolica\": 95,\n    \"spo2\": 91,\n    \"temperatura\": 37,\n    \"dolor\": 4,\n    \"gcs\": 15\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "3. Conteo DESPUÉS (esperar ~5 s): total = antes + 1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json(); const antes = Number(pm.collectionVariables.get('totalAntes'));",
+                  "pm.test('total = antes + 1 (si falla, espera 5 s y reenvía)', () => pm.expect(b.totalActivos).to.eql(antes + 1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "4a. EN_CONSULTA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_flujo}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_flujo}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"EN_CONSULTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "4b. ALTA (el paciente deja de contar como activo)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_flujo}}/estado",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_flujo}}",
+                "estado"
+              ],
+              "query": []
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"ALTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "5. Conteo tras el alta (esperar ~5 s): total = antes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const antes = Number(pm.collectionVariables.get('totalAntes'));",
+                  "pm.test('total vuelve a antes (si falla, espera 5 s y reenvía)', () => pm.expect(pm.response.json().totalActivos).to.eql(antes));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Escalamiento por SLA y alertas (RF-05, RN-03, RF-06)",
+      "description": "E1 y E6 son CRITICO (SLA 5 min). Pasados ~6 min sin pasarlos a EN_CONSULTA, el proceso los escala UNA sola vez y aparece una alerta por cada uno. No los cambies de estado antes de ver la alerta.",
+      "item": [
+        {
+          "name": "Alertas paginadas (tras ~6 min de registrar E1/E6)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json();",
+                  "pm.test('cada alerta trae alertId, deliveryCursor, patientId, nivel y timestamp', () => a.forEach(x => ['alertId','deliveryCursor','patientId','nivel','timestamp'].forEach(k => pm.expect(x).to.have.property(k))));",
+                  "pm.test('sin pacientes duplicados (RN-03)', () => { const ids = a.map(x => x.patientId); pm.expect(new Set(ids).size).to.eql(ids.length); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/alertas?despuesDe=0&limite=50",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "alertas"
+              ],
+              "query": [
+                {
+                  "key": "despuesDe",
+                  "value": "0"
+                },
+                {
+                  "key": "limite",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Debe listar una alerta por cada paciente escalado. Si escalaron una sola vez, no habrá duplicados por paciente."
+          }
+        },
+        {
+          "name": "E1 consultado: flags.escalado = true (tras ~6 min)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('E1 escalado (SLA 5 min superado)', () => pm.expect(pm.response.json().flags.escalado).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/pacientes/{{id_E1}}",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "pacientes",
+                "{{id_E1}}"
+              ],
+              "query": []
+            }
+          }
+        },
+        {
+          "name": "Alertas: reanudar desde el último id (despuesDe=1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/alertas?despuesDe=1&limite=50",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "alertas"
+              ],
+              "query": [
+                {
+                  "key": "despuesDe",
+                  "value": "1"
+                },
+                {
+                  "key": "limite",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "SSE en vivo (referencia: usar curl -N o una petición SSE de Postman)",
+          "event": [],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/alertas/stream",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "alertas",
+                "stream"
+              ],
+              "query": []
+            },
+            "description": "Postman Collection no ejecuta SSE de forma fiable en el Runner. Ábrelo en Postman como petición SSE nueva con esta URL y el header X-API-Key, o usa: curl -N {{triageUrl}}/triage/alertas/stream -H \"X-API-Key: ...\" -H \"Accept: text/event-stream\". Verás un heartbeat cada 15 s."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Reporte de operación por hora (RF-05)",
+      "item": [
+        {
+          "name": "Reporte de las últimas 24 h → 200",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const h = new Date(); const d = new Date(h.getTime() - 24*3600*1000);",
+                  "pm.collectionVariables.set('hasta', h.toISOString().replace(/\\.\\d+Z$/, 'Z'));",
+                  "pm.collectionVariables.set('desde', d.toISOString().replace(/\\.\\d+Z$/, 'Z'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "console.log(pm.response.text());"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/reportes/operacion?desde={{desde}}&hasta={{hasta}}",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "reportes",
+                "operacion"
+              ],
+              "query": [
+                {
+                  "key": "desde",
+                  "value": "{{desde}}"
+                },
+                {
+                  "key": "hasta",
+                  "value": "{{hasta}}"
+                }
+              ]
+            },
+            "description": "Agrupa por hora: total registrados, conteo por nivel, promedio y p95 del tiempo hasta la primera consulta."
+          }
+        },
+        {
+          "name": "Fechas inválidas → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{triageApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{triageUrl}}/triage/reportes/operacion?desde=ayer&hasta=hoy",
+              "host": [
+                "{{triageUrl}}"
+              ],
+              "path": [
+                "triage",
+                "reportes",
+                "operacion"
+              ],
+              "query": [
+                {
+                  "key": "desde",
+                  "value": "ayer"
+                },
+                {
+                  "key": "hasta",
+                  "value": "hoy"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Limpieza (opcional): cerrar los pacientes de prueba",
+      "description": "Pasa a ALTA los pacientes E1–E6 que sigan activos, para no dejar el conteo del Asistente ni futuros escalamientos con datos de prueba. Los PATCH a pacientes ya cerrados devuelven 409 y se ignoran.",
+      "item": [
+        {
+          "name": "Cerrar E1–E6 (EN_CONSULTA → ALTA)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const base = pm.variables.get('triageUrl'); const key = pm.variables.get('triageApiKey');",
+                  "['E1','E2','E3','E4','E5','E6'].forEach(c => {",
+                  "  const id = pm.variables.get('id_' + c); if (!id) return;",
+                  "  ['EN_CONSULTA','ALTA'].reduce((p, estado) => p.then(() => new Promise(r => pm.sendRequest({",
+                  "    url: base + '/triage/pacientes/' + id + '/estado', method: 'PATCH',",
+                  "    header: { 'X-API-Key': key, 'Content-Type': 'application/json' },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ estado }) } }, () => r()))), Promise.resolve());",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "console.log('Espera ~5 s y consulta de nuevo el conteo: debería quedar en 0 activos de prueba.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{asistenteApiKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{asistenteUrl}}/asistente/estado-urgencias",
+              "host": [
+                "{{asistenteUrl}}"
+              ],
+              "path": [
+                "asistente",
+                "estado-urgencias"
+              ],
+              "query": []
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
