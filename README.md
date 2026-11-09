@@ -132,16 +132,16 @@ Pasos:
 
 ```mermaid
 flowchart LR
-    Client[Cliente API / equipo médico] -->|X-API-Key| Triage[Triage Service :8080]
-    Client -->|X-API-Key| Assistant[Clinical Assistant Service :8081]
-    Triage --> PG[(PostgreSQL)]
-    Triage -->|outbox → triaje.eventos| Kafka[(Kafka)]
-    Triage -. SSE /triage/alertas/stream .-> Client
-    Kafka -->|consumidor| Assistant
-    Kafka -. fallos → triaje.eventos.dlt .-> Kafka
-    Assistant --> Redis[(Redis: pacientes activos por nivel)]
-    Assistant -->|SimpleVectorStore en memoria| Corpus[(Corpus PROTO-001..003)]
-    Assistant -->|Spring AI + Resilience4j| LLM[Azure OpenAI: gpt-5.4-mini / text-embedding-3-small]
+    Client["Cliente API / equipo médico"] -->|"X-API-Key"| Triage["Triage Service :8080"]
+    Client -->|"X-API-Key"| Assistant["Clinical Assistant Service :8081"]
+    Triage --> PG[("PostgreSQL")]
+    Triage -->|"outbox → triaje.eventos"| Kafka[("Kafka")]
+    Triage -. "SSE /triage/alertas/stream" .-> Client
+    Kafka -->|"consumidor"| Assistant
+    Kafka -. "fallos → triaje.eventos.dlt" .-> Kafka
+    Assistant --> Redis[("Redis: pacientes activos por nivel")]
+    Assistant -->|"SimpleVectorStore en memoria"| Corpus[("Corpus PROTO-001..003")]
+    Assistant -->|"Spring AI + Resilience4j"| LLM["Azure OpenAI: gpt-5.4-mini / text-embedding-3-small"]
 ```
 
 - Triage escribe paciente, auditoría, alerta y outbox en **una** transacción PostgreSQL; un relay publica a Kafka después. Triage no depende de Kafka ni del Asistente.
