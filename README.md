@@ -225,6 +225,8 @@ cd clinical-assistant-service && ./gradlew test
 
 Cubren clasificación E1-E6, transiciones válidas e inválidas, escalamiento idempotente, outbox, alertas/SSE, reporte, proyección Redis, citas RAG, abstención y fallos del LLM. No hay comando de lint documentado.
 
+Cada `./gradlew test` genera el informe de cobertura de JaCoCo en `build/reports/jacoco/test/html/index.html` de cada servicio (sin umbrales mínimos: es informativo). La cobertura completa requiere Docker en marcha, porque las pruebas de integración con Testcontainers forman parte de la medición.
+
 ## Puerta E2E (curl + BDD + MBT)
 
 Pruebas de extremo a extremo contra un `docker compose` real, solo con `bash`, `curl` y `jq`:
@@ -314,24 +316,13 @@ Un solo host HTTPS (certificado Let's Encrypt) enruta por prefijo hacia cada ser
 
 Las API keys están en Key Vault (`kv-ptc-a01`: `triage-api-key`, `asistente-api-key`); no se publican. Las URLs existen mientras el entorno esté desplegado: se elimina al terminar con `scripts/destroy-azure.sh`.
 
-Verificado en Azure el 2026-11-08:
+Verificado contra Azure el 2026-11-09 (prueba E2E con `curl`, 25 comprobaciones):
 
 - Sin `X-API-Key`: 401. Registro de paciente: 201 con nivel y estado; SSE de alertas con heartbeat de 15 s.
 - Las tres consultas del baseline contra `gpt-5.4-mini` / `text-embedding-3-small` reales: crisis hipertensiva responde citando `PROTO-001`; sepsis (`PROTO-002`) y deshidratación pediátrica (`PROTO-003`) también; diabetes tipo 2 y dolor torácico se abstienen (no hay protocolo en el corpus).
 - Flujo integrado: registrar un paciente suma 1 al total de `/asistente/estado-urgencias` en menos de 4 s (Triage → Event Hubs → Asistente → Redis) y el alta lo resta.
 
-Demo reproducible:
-
-```bash
-H=https://ptc-a01-api.eastus2.cloudapp.azure.com
-TK=$(az keyvault secret show --vault-name kv-ptc-a01 --name triage-api-key --query value -o tsv)
-AK=$(az keyvault secret show --vault-name kv-ptc-a01 --name asistente-api-key --query value -o tsv)
-curl -s -X POST $H/asistente/consulta -H "X-API-Key: $AK" -H 'Content-Type: application/json' \
-  -d '{"pregunta":"¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"}'
-curl -s $H/asistente/estado-urgencias -H "X-API-Key: $AK"
-curl -s -X POST $H/triage/pacientes -H "X-API-Key: $TK" -H 'Content-Type: application/json' \
-  -d '{"nombreCompleto":"Ana Perez","edad":54,"quejaPrincipal":"Dolor torácico","signosVitales":{"frecuenciaCardiaca":130,"presionSistolica":180,"presionDiastolica":110,"spo2":97,"temperatura":36.8,"dolor":8,"gcs":15}}'
-```
+Para reproducirlo, ver [Prueba rápida contra Azure](#prueba-rápida-contra-azure).
 
 ## Referencia de la API (Azure)
 

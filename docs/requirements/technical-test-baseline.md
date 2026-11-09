@@ -145,7 +145,7 @@ Este texto se incluye únicamente para reproducir el corpus del ejercicio; no se
 ## Requisitos técnicos y entregables
 
 - Java + Spring Boot 3 + Spring WebFlux y Reactor (`Mono`/`Flux`) en los dos servicios. R2DBC reactivo para PostgreSQL. Llamadas bloqueantes en event loop se penalizan.
-- Kafka integra ambos servicios con el topic `triaje.eventos` y los cuatro eventos indicados en AGENTS.md. Formato de mensaje libre, documentar.
+- Kafka integra ambos servicios con el topic `triaje.eventos` y los cuatro eventos `paciente_registrado`, `paciente_escalado`, `paciente_en_consulta` y `paciente_alta`. Formato de mensaje libre, documentar.
 - Resilience4j Circuit Breaker para llamadas al proveedor LLM; fallback explícito HTTP 503 con mensaje claro. Triage nunca depende de la disponibilidad del Asistente.
 - RAG con Spring AI y modelo de generación OpenAI GPT-5.4-mini servido por Azure OpenAI/Microsoft Foundry. La integración debe conservar comportamiento reactivo (por ejemplo, streaming y composición Reactor), con Resilience4j alrededor de llamadas al proveedor. El vector store y el modelo de embeddings quedan pendientes de decisión.
 - Observabilidad: health/readiness probes, logs estructurados con correlación, Micrometer para conteos por nivel, escalamientos y latencia LLM; OpenTelemetry es bonus.

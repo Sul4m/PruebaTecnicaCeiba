@@ -2,7 +2,7 @@
 title: 'Story 4.5 - Puerta E2E con curl, BDD y MBT'
 type: 'test'
 created: '2026-11-08'
-status: 'review'
+status: 'done'
 baseline: 'docs/requirements/technical-test-baseline.md'
 context:
   - '_bmad-output/planning-artifacts/epics.md'

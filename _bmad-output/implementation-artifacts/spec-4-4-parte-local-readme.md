@@ -2,7 +2,7 @@
 title: 'Story 4.4 (parte local) - README y ADR de entrega'
 type: 'docs'
 created: '2026-11-08'
-status: 'in-progress'
+status: 'done'
 ---
 
 ## Intent
