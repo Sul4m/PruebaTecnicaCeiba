@@ -1,6 +1,6 @@
 ---
-status: draft
-stepsCompleted: [1]
+status: final
+stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
   - _bmad-output/planning-artifacts/prds/prd-PruebaTecnicaCeiba-2026-11-07/prd.md
   - _bmad-output/planning-artifacts/architecture/solution-design-PruebaTecnicaCeiba.md
@@ -100,7 +100,7 @@ FR5: Epic 3 - recibir y recuperar alertas de escalamiento.
 FR6: Epic 3 - consultar la carga activa por nivel desde la proyección Kafka/Redis.
 FR7: Epic 4 - consultar protocolos con citas y abstención segura.
 
-## Epic List (propuesta para aprobación)
+## Epic List
 
 ### Epic 1: El personal de admisión registra y gestiona pacientes con prioridades y tiempos claros
 
@@ -128,29 +128,482 @@ Un usuario médico pregunta en lenguaje natural y recibe una respuesta sustentad
 
 ### Requisitos transversales
 
-NFR1-NFR9 y requisitos adicionales (seguridad, pruebas, observabilidad, Docker Compose, documentación, Terraform, manifests y URL Azure) se incorporan como criterios de aceptación en las historias de cada epic, no como épicas técnicas aisladas. El despliegue progresivo acompaña cada corte vertical; la URL final debe exponer los dos servicios integrados.
+NFR1-NFR9 y requisitos adicionales (seguridad, pruebas, observabilidad, Docker Compose, documentación, Terraform, manifests y URL Azure) se incorporan como criterios de aceptación en las historias de cada epic, no como épicas técnicas aisladas. La URL final debe exponer los dos servicios integrados.
 
-<!-- Repeat for each epic in epic_list (N = 1, 2, 3...) -->
+### Orden de ejecución
 
-## Epic {{N}}: {{epic_title_N}}
+Por decisión del usuario (2026-11-07), todo se construye y valida primero en local (Docker Compose) y con tests (Testcontainers). Las historias de despliegue en Azure (1.6 y 3.4) y la parte Azure de 4.4 se implementan al final, en el orden 1.6 → 3.4 → 4.4, cuando el resto esté terminado y verificado. Ninguna historia local depende de Azure.
 
-{{epic_goal_N}}
+## Epic 1: El personal de admisión registra y gestiona pacientes con prioridades y tiempos claros
 
-<!-- Repeat for each story (M = 1, 2, 3...) within epic N -->
+Enfermería puede registrar pacientes, recibir su clasificación/SLA, consultar su estado, actualizarlo por transiciones válidas y confiar en que los vencimientos se escalen una sola vez con auditoría íntegra. Cubre FR1, FR2 y FR3.
 
-### Story {{N}}.{{M}}: {{story_title_N_M}}
+### Story 1.1: Registrar y clasificar un paciente
 
-As a {{user_type}},
-I want {{capability}},
-So that {{value_benefit}}.
+Como personal de admisión,
+quiero registrar un paciente con sus signos vitales y recibir su nivel de triaje y SLA,
+para que la prioridad de atención sea consistente y no dependa del criterio manual.
 
 **Acceptance Criteria:**
 
-<!-- for each AC on this story -->
+**Dado** un request válido con `X-API-Key` correcta
+**Cuando** se invoca `POST /triage/pacientes` con nombre, edad, queja principal, FC, sistólica, diastólica, SpO2, temperatura, dolor y GCS
+**Entonces** responde HTTP 201 con `id` (UUID), `nivel`, `slaMinutos`, estado `REGISTRADO` y `fechaRegistro` ISO 8601 en UTC
+**Y** el paciente y su auditoría inicial (timestamp, id de paciente, estado anterior nulo, estado nuevo `REGISTRADO`, tipo de evento) se guardan en PostgreSQL vía R2DBC en una sola transacción, con migraciones versionadas que crean solo `patient` y `audit_event`.
 
-**Given** {{precondition}}
-**When** {{action}}
-**Then** {{expected_outcome}}
-**And** {{additional_criteria}}
+**Dado** los casos E1-E6 del baseline con nombre y edad válidos
+**Cuando** se registran
+**Entonces** el nivel asignado es exactamente `CRITICO`, `URGENTE`, `URGENTE_2`, `NO_URGENTE`, `NO_URGENTE_2` y `CRITICO` respectivamente
+**Y** `slaMinutos` corresponde a RN-02 (5, 10, 30, 60, 120).
 
-<!-- End story repeat -->
+**Dado** signos que cumplen condiciones de varios niveles
+**Cuando** se clasifica
+**Entonces** prevalece el nivel más grave, respetando los comparadores inclusivos/exclusivos de RN-01
+**Y** una queja de la lista administrativa (`documentos`, `recolección de resultados`, `renovación de recetario`, `vacunación`, `seguimiento`) solo produce nivel 5 si antes se descartaron los niveles 1-3; con tests unitarios de cada frontera de RN-01.
+
+**Dado** un campo fuera de rango (FC 20-250, sistólica 60-260, diastólica 30-160 y menor que la sistólica, SpO2 70-100, temperatura 34.0-42.0, dolor 0-10, GCS 3-15, edad 0-120, nombre 3-100 caracteres) o ausente
+**Cuando** se invoca el registro
+**Entonces** responde HTTP 400 con un mensaje que identifica el campo inválido
+**Y** no se persiste nada.
+
+**Dado** un request sin `X-API-Key` o con una clave incorrecta
+**Cuando** se invoca cualquier endpoint de negocio de Triage
+**Entonces** responde HTTP 401 sin revelar datos
+**Y** la clave se lee de configuración/variable de entorno, nunca del código.
+
+**Dado** el servicio en ejecución
+**Cuando** se consultan health/readiness y métricas
+**Entonces** las probes responden, existe un contador Micrometer de clasificaciones por nivel y los logs son estructurados con correlación sin nombre, signos vitales ni API key
+**Y** `docker compose up` levanta Triage con PostgreSQL en un solo comando, y existe al menos una prueba de integración del flujo HTTP contra PostgreSQL (Testcontainers o equivalente).
+
+### Story 1.2: Consultar un paciente
+
+Como personal médico o de admisión,
+quiero consultar los datos y el estado actual de un paciente,
+para saber cuánto lleva esperando y si fue escalado.
+
+**Acceptance Criteria:**
+
+**Dado** un paciente registrado
+**Cuando** se invoca `GET /triage/pacientes/{id}` con API key válida
+**Entonces** responde HTTP 200 con los datos completos del registro, nivel, `slaMinutos`, estado actual, flags (incluido `escalado`, inicialmente `false`) y tiempo en el estado actual calculado desde el último cambio de estado.
+
+**Dado** un UUID inexistente
+**Cuando** se consulta
+**Entonces** responde HTTP 404 con mensaje descriptivo.
+
+**Dado** un `id` con formato inválido
+**Cuando** se consulta
+**Entonces** responde HTTP 400 identificando el parámetro.
+
+**Dado** el cálculo del tiempo en estado
+**Cuando** se prueba
+**Entonces** usa un reloj inyectable (`Clock`) para que los tests sean deterministas.
+
+### Story 1.3: Cambiar el estado con transiciones válidas
+
+Como personal médico,
+quiero mover a un paciente a consulta o darle alta,
+para que el estado y los tiempos reflejen la atención real con trazabilidad.
+
+**Acceptance Criteria:**
+
+**Dado** un paciente `REGISTRADO`
+**Cuando** se invoca `PATCH /triage/pacientes/{id}/estado` con `{ "estado": "EN_CONSULTA" }` o `{ "estado": "ALTA" }`
+**Entonces** responde HTTP 200 con el estado nuevo
+**Y** en la misma transacción se actualiza el paciente y se agrega una auditoría con estado anterior, estado nuevo, timestamp y tipo de evento (`paciente_en_consulta` o `paciente_alta`).
+
+**Dado** un paciente `EN_CONSULTA`
+**Cuando** se solicita `ALTA`
+**Entonces** la transición se acepta y se audita.
+
+**Dado** cualquier transición no permitida (`EN_CONSULTA`→`REGISTRADO`, `ALTA`→cualquiera, mismo estado actual)
+**Cuando** se solicita
+**Entonces** responde HTTP 409 con mensaje que indica estado actual y estado pedido
+**Y** no cambia el paciente ni se agrega auditoría.
+
+**Dado** un estado desconocido en el cuerpo o un paciente inexistente
+**Cuando** se invoca el PATCH
+**Entonces** responde HTTP 400 o 404 respectivamente.
+
+**Dado** dos actualizaciones concurrentes sobre el mismo paciente
+**Cuando** se procesan
+**Entonces** solo una aplica la transición (actualización condicional por estado esperado) y la otra recibe 409
+**Y** no existe ningún endpoint para borrar o modificar auditoría; hay tests de todas las transiciones válidas e inválidas.
+
+### Story 1.4: Publicar eventos de triaje de forma durable
+
+Como equipo médico y servicios consumidores,
+quiero que cada registro y cambio de estado se publique en `triaje.eventos`,
+para que otros servicios reaccionen sin depender de la API de Triage.
+
+**Acceptance Criteria:**
+
+**Dado** un registro o una transición válida
+**Cuando** se confirma la transacción
+**Entonces** en esa misma transacción R2DBC se insertó una fila en `outbox_event` (nueva migración) con el evento `paciente_registrado`, `paciente_en_consulta` o `paciente_alta`
+**Y** el paciente incrementa su `aggregateVersion` en cada cambio publicable.
+
+**Dado** filas pendientes en el outbox
+**Cuando** corre el relay
+**Entonces** publica en `triaje.eventos` con clave `patientId` y envelope JSON v1 (`eventId`, `eventType`, `schemaVersion`, `occurredAt`, `aggregateVersion` y snapshot `patientId`, `nivel`, `estado`, `escalated`), sin nombre, edad ni signos vitales
+**Y** marca la fila como publicada solo tras confirmación del broker (`acks=all`, idempotencia habilitada), preservando el orden de versiones por paciente con un único relay y lotes acotados.
+
+**Dado** Kafka no disponible
+**Cuando** se registra un paciente
+**Entonces** el registro responde normalmente y el evento queda pendiente
+**Y** el relay reintenta con backoff y publica al recuperarse el broker, sin bloquear el event loop.
+
+**Dado** un evento que falla repetidamente
+**Cuando** se agotan los reintentos configurados
+**Entonces** se envía a un dead-letter topic y se registra error/métrica operativa, sin descartarlo silenciosamente.
+
+**Dado** el entorno local
+**Cuando** se ejecuta `docker compose up`
+**Entonces** Kafka se levanta junto a Triage y PostgreSQL
+**Y** el formato del evento queda documentado (ADR-0005/README), con pruebas de integración de outbox→Kafka y de publicación tras caída del broker.
+
+### Story 1.5: Escalar por SLA una sola vez
+
+Como equipo médico,
+quiero que un paciente que supera su SLA sin entrar a consulta quede escalado,
+para no perder de vista a quien lleva demasiado tiempo esperando.
+
+**Acceptance Criteria:**
+
+**Dado** un paciente `REGISTRADO` cuyo tiempo desde registro supera su SLA
+**Cuando** corre el proceso periódico
+**Entonces** marca persistentemente `escalado = true`, agrega auditoría del cambio de flag y encola `paciente_escalado` en el outbox en la misma transacción
+**Y** `GET /triage/pacientes/{id}` muestra el flag escalado.
+
+**Dado** un paciente ya escalado
+**Cuando** el proceso vuelve a correr o se ejecutan dos instancias en paralelo
+**Entonces** no se publica otro evento ni se duplica la auditoría (actualización condicional `UPDATE ... RETURNING` o equivalente).
+
+**Dado** un paciente `EN_CONSULTA` o `ALTA`
+**Cuando** corre el proceso aunque su tiempo supere el SLA
+**Entonces** nunca se escala.
+
+**Dado** un paciente cuyo tiempo aún no supera su SLA
+**Cuando** corre el proceso
+**Entonces** no se escala; las fronteras exactas por nivel se prueban con reloj inyectable.
+
+**Dado** la configuración
+**Cuando** se ajustan el intervalo del scheduler y los SLA por nivel por propiedades
+**Entonces** las pruebas pueden usar valores cortos sin cambiar código
+**Y** el proceso trabaja por lotes con `LIMIT`, concurrencia acotada y sin materializar todos los pacientes, e incrementa una métrica Micrometer de escalamientos.
+
+### Story 1.6: Exponer Triage en Azure
+
+Como evaluador,
+quiero acceder a Triage desplegado en Azure por HTTPS,
+para verificar que el servicio funciona fuera del entorno local.
+
+**Acceptance Criteria:**
+
+**Dado** `subscription_id` y `location` como variables
+**Cuando** se aplica Terraform
+**Entonces** se crea el grupo `rg-pruebatecnicaceiba-<sufijo>` con tag `project=PruebaTecnicaCeiba` que contiene AKS, ACR, Key Vault con identidades de workload, Azure Database for PostgreSQL Flexible Server y Event Hubs con endpoint Kafka (compatibilidad validada)
+**Y** ningún valor secreto queda en Git ni en el estado Terraform.
+
+**Dado** los manifests de Triage
+**Cuando** se aplican en AKS
+**Entonces** existen `Deployment`, `Service`, `ServiceAccount`, ConfigMap no secreto, probes startup/readiness/liveness y requests/limits explícitos
+**Y** la API key y las credenciales se obtienen de Key Vault mediante Workload ID/CSI.
+
+**Dado** un push a la rama protegida
+**Cuando** corre el pipeline
+**Entonces** valida, ejecuta tests, construye y publica la imagen en ACR con tag inmutable y aplica los manifests, sin ejecutar Terraform si la infraestructura no cambió, usando OIDC hacia Azure.
+
+**Dado** el despliegue completo
+**Cuando** se llama a `POST /triage/pacientes` por la URL pública HTTPS con API key
+**Entonces** el paciente se registra y su evento llega a Event Hubs
+**Y** existe un script local, ignorado por Git, que valida suscripción, nombre y tag del grupo y pide confirmación exacta antes de eliminarlo.
+
+## Epic 2: Operaciones identifica carga y tiempos de espera por hora
+
+Un usuario autorizado puede consultar el reporte de operación para detectar volúmenes y tiempos hasta la primera consulta, con agregados calculados directamente en PostgreSQL. Cubre FR4.
+
+### Story 2.1: Consultar el reporte de operación por hora
+
+Como responsable de operación,
+quiero ver por hora cuántos pacientes se registraron, de qué nivel y cuánto esperaron hasta entrar a consulta,
+para detectar picos de carga y tiempos de espera fuera de lo esperado.
+
+**Acceptance Criteria:**
+
+**Dado** pacientes registrados en distintas horas, con y sin entrada a consulta
+**Cuando** se invoca `GET /triage/reportes/operacion?desde=...&hasta=...` con fechas ISO 8601 y API key válida
+**Entonces** responde HTTP 200 con una fila por hora UTC (bucket por `fechaRegistro`) que contiene total registrado, conteo por cada nivel, promedio y p95 en minutos desde el registro hasta la primera entrada `EN_CONSULTA`
+**Y** el rango se interpreta en UTC como `[desde, hasta)`.
+
+**Dado** pacientes sin entrada a consulta en un bucket
+**Cuando** se calcula el reporte
+**Entonces** cuentan en el total y en el conteo por nivel, pero se excluyen del promedio y del p95 (no se imputan como cero ni como tiempo actual)
+**Y** si ningún paciente del bucket entró a consulta, promedio y p95 son `null`.
+
+**Dado** un paciente con varias entradas a consulta registradas en auditoría
+**Cuando** se calcula su espera
+**Entonces** se usa solo la primera entrada `EN_CONSULTA`.
+
+**Dado** la implementación
+**Cuando** se revisa
+**Entonces** la agregación se resuelve en una consulta SQL (CTE/funciones de ventana o `ROW_NUMBER`, agregados con `FILTER`, `date_trunc('hour', ...)` y `percentile_cont(0.95)`), y la aplicación solo mapea filas ya agrupadas; no itera en memoria sobre pacientes
+**Y** existen índices sobre `patient(registered_at, level)` y `audit_event(patient_id, event_type, occurred_at)`.
+
+**Dado** `desde` o `hasta` ausentes, con formato inválido o `desde >= hasta`
+**Cuando** se invoca el reporte
+**Entonces** responde HTTP 400 identificando el parámetro.
+
+**Dado** datos sintéticos con resultados calculados a mano
+**Cuando** corren las pruebas de integración contra PostgreSQL
+**Entonces** total, conteos, promedio, p95 y límites del rango coinciden exactamente
+**Y** el endpoint responde en el stack local de `docker compose`.
+
+## Epic 3: El equipo médico conoce la carga activa y recibe escalaciones recuperables
+
+El equipo médico puede consultar pacientes activos por nivel y recibir alertas de escalamiento en vivo; si se desconecta, recupera alertas persistidas sin duplicados. Cubre FR5 y FR6.
+
+### Story 3.1: Persistir y consultar alertas de escalamiento
+
+Como equipo médico,
+quiero que cada escalamiento genere una alerta consultable,
+para no perder ninguna escalación aunque no esté conectado en ese momento.
+
+**Acceptance Criteria:**
+
+**Dado** un paciente que el proceso de SLA escala
+**Cuando** se confirma la transacción de escalamiento
+**Entonces** en esa misma transacción se inserta una fila en `medical_alert` (nueva migración) con `alertId` UUID y `deliveryCursor` `BIGINT` monotónico asignado mediante contador singleton bajo `SELECT ... FOR UPDATE`
+**Y** un reintento del escalamiento no crea una segunda alerta.
+
+**Dado** alertas persistidas
+**Cuando** se invoca `GET /triage/alertas?despuesDe=<deliveryCursor>&limite=<n>` con API key válida
+**Entonces** responde las alertas con cursor mayor al indicado, ordenadas por `deliveryCursor` ascendente y limitadas por página
+**Y** cada alerta contiene solo `alertId`, `deliveryCursor`, `patientId`, `nivel` y timestamp, sin nombre ni signos vitales.
+
+**Dado** parámetros de paginación inválidos
+**Cuando** se consulta
+**Entonces** responde HTTP 400 identificando el parámetro.
+
+**Dado** las pruebas de integración
+**Cuando** se escalan varios pacientes
+**Entonces** los cursores son estrictamente crecientes en el orden de confirmación y no existe endpoint para borrar alertas.
+
+### Story 3.2: Recibir alertas en vivo por SSE con recuperación
+
+Como equipo médico,
+quiero recibir las escalaciones en tiempo real y recuperar las perdidas al reconectarme,
+para reaccionar rápido sin depender de una conexión perfecta.
+
+**Acceptance Criteria:**
+
+**Dado** un cliente autenticado conectado a `GET /triage/alertas/stream` (`text/event-stream`)
+**Cuando** se escala un paciente
+**Entonces** el cliente recibe la alerta con `id: <deliveryCursor>` y los datos mínimos de la alerta, dentro de la cadencia de polling configurada.
+
+**Dado** un cliente que se reconecta enviando `Last-Event-ID`
+**Cuando** se abre el stream
+**Entonces** recibe primero todas las alertas con cursor mayor al indicado y luego las nuevas
+**Y** el contrato documenta que puede haber repeticiones y que el cliente deduplica por `alertId`.
+
+**Dado** la implementación
+**Cuando** se revisa
+**Entonces** el stream lee la tabla persistida con polling reactivo acotado y heartbeat periódico, sin `Sink` local como fuente de verdad, de modo que funciona tras reinicios y con varias réplicas
+**Y** sin API key válida responde HTTP 401.
+
+**Dado** las pruebas
+**Cuando** se simula desconexión y reconexión con `Last-Event-ID`
+**Entonces** no se pierde ninguna alerta escalada en el intervalo
+**Y** se expone una métrica de conexiones SSE activas, y la decisión del canal queda en ADR-0002.
+
+### Story 3.3: Consultar la carga activa de urgencias por nivel
+
+Como equipo médico,
+quiero saber cuántos pacientes activos hay por nivel de triaje,
+para dimensionar la carga sin consultar el sistema de admisión.
+
+**Acceptance Criteria:**
+
+**Dado** el servicio Asistente Clínico consumiendo `triaje.eventos`
+**Cuando** recibe eventos v1
+**Entonces** actualiza en Redis, de forma atómica (script Lua o equivalente), el último estado por `patientId` y los conteos por nivel solo si `aggregateVersion` es mayor que la materializada
+**Y** `paciente_registrado` suma al nivel, `paciente_escalado` y `paciente_en_consulta` no cambian el conteo y `paciente_alta` resta una sola vez.
+
+**Dado** eventos duplicados, versiones viejas o una versión saltada
+**Cuando** se procesan
+**Entonces** los duplicados y versiones viejas no alteran conteos, la versión mayor se aplica comparando el snapshot completo con el estado previo y los saltos se registran en métrica/log.
+
+**Dado** un tipo de evento o `schemaVersion` no soportado, o un mensaje inválido
+**Cuando** se consume
+**Entonces** se envía a DLQ con error operativo, sin descartarlo silenciosamente
+**Y** el offset se confirma solo después de que Redis aplicó el cambio.
+
+**Dado** la proyección
+**Cuando** se invoca `GET /asistente/estado-urgencias` con API key válida del Asistente
+**Entonces** responde los pacientes activos (estado distinto de `ALTA`) por cada nivel, incluidos los niveles con cero
+**Y** el Asistente nunca llama a la API ni a la base de Triage.
+
+**Dado** el entorno local
+**Cuando** se ejecuta `docker compose up`
+**Entonces** se levantan ambos servicios, PostgreSQL, Kafka y Redis en un solo comando
+**Y** pruebas de integración cubren registro → consulta → alta, duplicados y replay desde el inicio del topic.
+
+### Story 3.4: Exponer el Asistente Clínico en Azure
+
+Como evaluador,
+quiero acceder al Asistente desplegado en Azure por HTTPS,
+para verificar la integración entre servicios por eventos en la nube.
+
+**Acceptance Criteria:**
+
+**Dado** la infraestructura de la Story 1.6
+**Cuando** se aplica Terraform con los cambios de esta historia
+**Entonces** se agrega Azure Managed Redis en el mismo grupo y el secreto de API key del Asistente en Key Vault, sin secretos en Git ni en el estado.
+
+**Dado** los manifests del Asistente
+**Cuando** se aplican en AKS
+**Entonces** existen `Deployment`, `Service`, `ServiceAccount`, ConfigMap, probes y requests/limits propios, con credenciales vía Workload ID/CSI
+**Y** el pipeline construye y publica las dos imágenes con tags inmutables.
+
+**Dado** un paciente registrado por la URL HTTPS de Triage
+**Cuando** se consulta `GET /asistente/estado-urgencias` por la URL HTTPS del Asistente
+**Entonces** el conteo refleja al paciente a partir de los eventos de Event Hubs
+**Y** `GET /triage/alertas/stream` es accesible por HTTPS sin que el ingress corte el stream antes del heartbeat.
+
+## Epic 4: El equipo médico consulta protocolos con fuentes y abstención explícita
+
+Un usuario médico pregunta en lenguaje natural y recibe una respuesta sustentada con protocolo/sección o el aviso exacto de que no existe protocolo disponible, sin contenido clínico generado. Cubre FR7.
+
+### Story 4.1: Responder consultas citando el protocolo del corpus
+
+Como médico,
+quiero preguntar en lenguaje natural sobre un protocolo y recibir la respuesta con su fuente,
+para aplicar el protocolo correcto y poder verificarlo.
+
+**Acceptance Criteria:**
+
+**Dado** el corpus mínimo versionado (PROTO-001, PROTO-002, PROTO-003) sin contenido agregado
+**Cuando** arranca el Asistente
+**Entonces** se divide por protocolo y sección con metadata (`protocolId`, `sectionId`, `corpusVersion`), se calculan embeddings `text-embedding-3-small` y se carga `SimpleVectorStore` antes de que readiness responda OK.
+
+**Dado** la pregunta "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"
+**Cuando** se invoca `POST /asistente/consulta` con `{ "pregunta": "..." }` y API key válida
+**Entonces** responde `{ "respuesta": "...", "fuentes": [{ "protocolo": "PROTO-001", "seccion": "..." }] }` con contenido de PROTO-001
+**Y** la pregunta "¿Cuándo se administra el primer antibiótico en sepsis?" responde con contenido y cita de PROTO-002.
+
+**Dado** la generación
+**Cuando** se construye la respuesta
+**Entonces** el modelo `gpt-5.4-mini` (Spring AI 1.0.x, Azure OpenAI/Foundry) redacta solo con los fragmentos recuperados, con `ChatClient.stream()` compuesto con Reactor, límite de tokens y sin herramientas ni acciones habilitadas
+**Y** `fuentes` se construye desde la metadata de los fragmentos usados, nunca desde texto del modelo.
+
+**Dado** el embedding de la pregunta y la búsqueda vectorial (APIs síncronas)
+**Cuando** se ejecutan
+**Entonces** corren en un scheduler dedicado con hilos y cola acotados, nunca en el event loop.
+
+**Dado** una pregunta vacía o mayor al límite configurado
+**Cuando** se invoca la consulta
+**Entonces** responde HTTP 400 identificando el campo.
+
+**Dado** las pruebas
+**Cuando** se ejecutan con el modelo mockeado
+**Entonces** las dos consultas citan el protocolo esperado sin llamar al proveedor real
+**Y** no se registran en logs la pregunta ni la respuesta clínica completa.
+
+### Story 4.2: Abstenerse cuando no existe protocolo
+
+Como médico,
+quiero que el asistente diga explícitamente que no hay protocolo cuando la pregunta no está cubierta,
+para no recibir contenido clínico inventado.
+
+**Acceptance Criteria:**
+
+**Dado** la pregunta "¿Cuál es el tratamiento de primera línea para la diabetes tipo 2?"
+**Cuando** se invoca `POST /asistente/consulta`
+**Entonces** responde únicamente el aviso fijo de que no existe protocolo disponible, con `fuentes` vacío y sin contenido clínico
+**Y** el LLM no se invoca.
+
+**Dado** el umbral mínimo de similitud configurable
+**Cuando** se calibra con las tres consultas del baseline
+**Entonces** las dos consultas cubiertas lo superan y la de diabetes no; el valor elegido y su calibración quedan documentados.
+
+**Dado** una respuesta generada cuyas fuentes no corresponden a un protocolo existente en el corpus
+**Cuando** se valida antes de responder
+**Entonces** se descarta y se devuelve el aviso de abstención (RN-05).
+
+**Dado** las pruebas con modelo mockeado
+**Cuando** el mock intenta devolver contenido para una pregunta sin coincidencia o citar un protocolo inexistente
+**Entonces** la API responde solo el aviso de abstención.
+
+### Story 4.3: Responder con claridad cuando el proveedor LLM falla
+
+Como médico,
+quiero un error claro cuando el proveedor del modelo no está disponible,
+para saber que debo consultar el protocolo por otra vía.
+
+**Acceptance Criteria:**
+
+**Dado** el proveedor de chat o embeddings caído, lento o con errores
+**Cuando** se invoca `POST /asistente/consulta`
+**Entonces** responde HTTP 503 con un mensaje claro y sin contenido clínico
+**Y** las llamadas tienen timeout, Resilience4j Circuit Breaker y bulkhead configurables.
+
+**Dado** el circuito abierto o el scheduler de embeddings saturado
+**Cuando** llegan nuevas consultas
+**Entonces** se rechazan rápido con HTTP 503 sin crear colas sin límite.
+
+**Dado** la observabilidad
+**Cuando** se invoca el proveedor
+**Entonces** se registra una métrica Micrometer de latencia del LLM, y métricas de fallos y saturación
+**Y** el endpoint de urgencias sigue respondiendo con el proveedor caído, y Triage no se ve afectado.
+
+**Dado** las pruebas
+**Cuando** el mock simula timeout y error
+**Entonces** se verifican el 503 y la apertura del circuito.
+
+### Story 4.4: Entregar la solución integrada y documentada
+
+Como evaluador,
+quiero probar ambos servicios en Azure y entender la arquitectura desde el README,
+para evaluar la prueba completa sin pasos manuales ocultos.
+
+**Acceptance Criteria:**
+
+**Dado** la infraestructura existente
+**Cuando** se aplica Terraform y el pipeline
+**Entonces** los deployments `gpt-5.4-mini` y `text-embedding-3-small` y su clave quedan configurados por entorno desde Key Vault
+**Y** las tres consultas del baseline responden por la URL HTTPS del Asistente según 4.1 y 4.2.
+
+**Dado** el repositorio
+**Cuando** se lee el README
+**Entonces** incluye el comando único de ejecución local, el diagrama de arquitectura, las tecnologías, las decisiones justificadas, el formato de eventos Kafka, la decisión RF-06, los supuestos y ambigüedades documentados, las URLs de Azure y cómo ejecutar los tests
+**Y** existen al menos dos ADR en `docs/adr/`.
+
+**Dado** `./gradlew test` en cada servicio
+**Cuando** se ejecuta
+**Entonces** pasan las pruebas de E1-E6, transiciones válidas e inválidas, escalamiento idempotente, citas RAG y abstención, sin proveedor LLM real.
+
+**Dado** el flujo completo en Azure
+**Cuando** se registra un paciente con SLA corto configurado para la demo
+**Entonces** se observa en orden: registro, conteo activo en el Asistente, escalamiento, alerta por SSE y alta que decrementa el conteo.
+
+### Story 4.5: Puerta E2E con curl, BDD y MBT
+
+Como equipo de entrega,
+quiero una puerta E2E ejecutable contra `docker compose up` real,
+para validar el flujo completo localmente antes de desplegar en Azure.
+
+**Acceptance Criteria:**
+
+**Dado** Docker disponible
+**Cuando** se ejecuta `e2e/run.sh`
+**Entonces** levanta el stack con secretos sintéticos y SLA corto (sin tocar `.env`), espera la readiness y sale con código distinto de 0 si algún escenario falla
+**Y** deja el stack abajo (`docker compose down -v`).
+
+**Dado** los criterios de las historias 1.1 a 4.3
+**Cuando** se ejecutan los escenarios BDD de `e2e/features/`
+**Entonces** cubren E1-E6, validaciones 400 con `campo`, 401, transiciones válidas e inválidas, reportes, escalamiento una sola vez, alertas persistidas, SSE con `Last-Event-ID`, conteo vía Kafka, RAG con cita, abstención y 503 con proveedor caído.
+
+**Dado** el modelo de estados del paciente en `e2e/model/`
+**Cuando** el generador MBT lo recorre
+**Entonces** cubre todas sus transiciones válidas, inválidas y de tiempo, verificando estado y `escalado` en cada paso y el conteo del Asistente al final.

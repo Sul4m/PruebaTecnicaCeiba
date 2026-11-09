@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Plantilla versionada. Copiar a scripts/destroy-azure.sh (IGNORADO por Git) y ejecutar:
+#   cp scripts/destroy-azure.sh.example scripts/destroy-azure.sh && chmod +x scripts/destroy-azure.sh
+#   EXPECTED_SUBSCRIPTION_ID=<id> scripts/destroy-azure.sh <suffix>   (la variable es obligatoria)
+# Elimina el grupo rg-pruebatecnicaceiba-<suffix> (y, aparte, el grupo del estado de Terraform) SOLO
+# si: la suscripción activa es la esperada, el nombre coincide, el grupo tiene el tag
+# project=PruebaTecnicaCeiba, y el usuario escribe el nombre exacto. No forma parte de CI/CD.
+set -euo pipefail
+
+SUFFIX="${1:?uso: $0 <suffix>}"
+[[ "$SUFFIX" =~ ^[a-z0-9]{3,8}$ ]] || { echo "suffix inválido"; exit 1; }
+
+SUB_ID="$(az account show --query id -o tsv)"
+SUB_NAME="$(az account show --query name -o tsv)"
+echo "Suscripción activa: $SUB_NAME ($SUB_ID)"
+if [[ -z "${EXPECTED_SUBSCRIPTION_ID:-}" ]]; then
+  echo "EXPECTED_SUBSCRIPTION_ID es obligatorio (export EXPECTED_SUBSCRIPTION_ID=<id>). Abortando."; exit 1
+fi
+if [[ "$SUB_ID" != "$EXPECTED_SUBSCRIPTION_ID" ]]; then
+  echo "La suscripción activa ($SUB_ID) no coincide con EXPECTED_SUBSCRIPTION_ID. Abortando."; exit 1
+fi
+read -r -p "¿Es la suscripción correcta? (si/no): " OK
+[[ "$OK" == "si" ]] || { echo "Cancelado."; exit 1; }
+
+destroy_group() {
+  local rg="$1"
+  if [[ "$(az group exists --name "$rg")" != "true" ]]; then
+    echo "El grupo $rg no existe; nada que borrar."; return 0
+  fi
+  local tag
+  tag="$(az group show --name "$rg" --query 'tags.project' -o tsv)"
+  if [[ "$tag" != "PruebaTecnicaCeiba" ]]; then
+    echo "El grupo $rg NO tiene el tag project=PruebaTecnicaCeiba (tiene '$tag'). Abortando."; exit 1
+  fi
+  echo "--- Recursos en $rg ---"
+  az resource list --resource-group "$rg" --query '[].{tipo:type,nombre:name}' -o table
+  read -r -p "Escriba el nombre exacto del grupo para eliminarlo ($rg): " TYPED
+  [[ "$TYPED" == "$rg" ]] || { echo "No coincide. Cancelado."; exit 1; }
+  az group delete --name "$rg" --yes
+  echo "Grupo $rg eliminado."
+}
+
+MAIN="rg-pruebatecnicaceiba-${SUFFIX}"
+# Key Vault: capturar el nombre antes de borrar para purgarlo (soft-delete bloquea reutilizar el nombre).
+KV="kv-ptc-${SUFFIX}"
+
+destroy_group "$MAIN"
+az keyvault purge --name "$KV" >/dev/null 2>&1 && echo "Key Vault $KV purgado." || true
+destroy_group "${MAIN}-tfstate"

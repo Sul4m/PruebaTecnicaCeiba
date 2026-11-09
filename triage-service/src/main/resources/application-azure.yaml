@@ -1,0 +1,26 @@
+# Perfil `azure` (AKS). Todo secreto llega por variables de entorno desde Key Vault (CSI):
+# DB_PASSWORD, TRIAGE_API_KEY, EVENTHUBS_CONNECTION_STRING. Nada de esto se versiona.
+spring:
+  r2dbc:
+    # sslMode=require: cifrado obligatorio; Azure PostgreSQL Flexible Server rechaza conexiones sin TLS.
+    url: r2dbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:triage}?sslMode=require
+  flyway:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME:triage}?sslmode=require
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: PLAIN
+      # Event Hubs: usuario literal "$ConnectionString", contraseña = connection string de namespace.
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${EVENTHUBS_CONNECTION_STRING}";
+    producer:
+      properties:
+        # Latencia de internet/región hacia Event Hubs: más holgura que en el Compose local.
+        max.block.ms: 15000
+        request.timeout.ms: 15000
+        delivery.timeout.ms: 30000
+
+triage:
+  kafka:
+    # Event Hubs no admite crear tópicos por la API Kafka: los crea Terraform.
+    create-topics: false

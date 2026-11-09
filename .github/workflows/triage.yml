@@ -1,0 +1,177 @@
+name: deploy
+
+# (Archivo triage.yml, ahora despliega Triage y el Asistente Clínico.)
+# Valida, prueba, construye/publica en ACR (tag inmutable = SHA) las dos imágenes y aplica los manifests.
+# Terraform NO corre aquí: ver infra.yml. Sin credenciales en el repo: OIDC hacia Azure.
+# Variables (Settings > Secrets and variables > Actions > Variables), ninguna es secreta:
+#   (job deploy usa environment `azure`) AZURE_CLIENT_ID (ci_deploy_client_id), AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, ACR_NAME,
+#   AKS_NAME, RESOURCE_GROUP, KV_NAME, TRIAGE_WORKLOAD_CLIENT_ID, DB_HOST, DB_USER,
+#   KAFKA_BOOTSTRAP_SERVERS, INGRESS_HOST, ASISTENTE_WORKLOAD_CLIENT_ID, REDIS_HOST,
+#   AZURE_OPENAI_ENDPOINT   (salidas de `terraform output`);  opcional: ASISTENTE_RAG_THRESHOLD (defecto 0.55)
+
+on:
+  pull_request:
+    paths:
+      - "triage-service/**"
+      - "clinical-assistant-service/**"
+      - "k8s/**"
+      - "scripts/render-k8s.sh"
+      - ".github/workflows/triage.yml"
+  push:
+    branches: [master]
+    paths:
+      - "triage-service/**"
+      - "clinical-assistant-service/**"
+      - "k8s/**"
+      - "scripts/render-k8s.sh"
+      - ".github/workflows/triage.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render y validar manifests (valores ficticios)
+        env:
+          IMAGE: example.azurecr.io/triage-service:0000000
+          TRIAGE_WORKLOAD_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+          AZURE_TENANT_ID: 00000000-0000-0000-0000-000000000000
+          KV_NAME: kv-example
+          DB_HOST: db.example.internal
+          DB_USER: pgadmin
+          KAFKA_BOOTSTRAP_SERVERS: example.servicebus.windows.net:9093
+          INGRESS_HOST: example.cloudapp.azure.com
+          INGRESS_DNS_LABEL: example
+          ACME_EMAIL: ci@example.com
+          ASISTENTE_WORKLOAD_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+          REDIS_HOST: redis.example.net
+          AZURE_OPENAI_ENDPOINT: https://example.openai.azure.com/
+          ASISTENTE_RAG_THRESHOLD: "0.55"
+        run: |
+          scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage k8s/asistente k8s/platform
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kubeconform" -strict -summary -ignore-missing-schemas "$RUNNER_TEMP"/k8s/*.yaml
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.11"
+      - name: Terraform fmt y validate
+        working-directory: infra/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+
+  test:
+    runs-on: ubuntu-latest # Docker disponible para Testcontainers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Tests de Triage
+        working-directory: triage-service
+        run: ./gradlew test --no-daemon
+
+  test-asistente:
+    runs-on: ubuntu-latest # Docker disponible para Testcontainers (Kafka, Redis)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Tests del Asistente
+        working-directory: clinical-assistant-service
+        run: ./gradlew test --no-daemon
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: [validate, test, test-asistente]
+    runs-on: ubuntu-latest
+    environment: azure
+    permissions:
+      id-token: write # OIDC
+      contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Construir y publicar las imágenes (tag = SHA)
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+        run: |
+          az acr login --name "$ACR_NAME"
+          # Servicio -> directorio de contexto de build (el Dockerfile está en cada servicio).
+          for svc in triage-service clinical-assistant-service; do
+            IMAGE="${ACR_NAME}.azurecr.io/${svc}:${IMAGE_TAG}"
+            # Re-ejecución: si el tag (inmutable) ya existe se omite build+push y se sigue al deploy.
+            if az acr repository show --name "$ACR_NAME" --image "${svc}:${IMAGE_TAG}" --output none 2>/dev/null; then
+              echo "El tag ${svc}:${IMAGE_TAG} ya existe en ACR; se omite build y push."
+              continue
+            fi
+            docker build -t "$IMAGE" "$svc"
+            docker push "$IMAGE"
+            # Hace el tag de solo lectura: no puede sobrescribirse (inmutable).
+            az acr repository update --name "$ACR_NAME" \
+              --image "${svc}:${IMAGE_TAG}" --write-enabled false
+          done
+
+      - uses: azure/setup-kubectl@v4
+      - uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: v0.1.4
+      - uses: azure/aks-set-context@v4
+        with:
+          resource-group: ${{ vars.RESOURCE_GROUP }}
+          cluster-name: ${{ vars.AKS_NAME }}
+          use-kubelogin: "true"
+
+      - name: Renderizar y aplicar manifests
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          TRIAGE_WORKLOAD_CLIENT_ID: ${{ vars.TRIAGE_WORKLOAD_CLIENT_ID }}
+          ASISTENTE_WORKLOAD_CLIENT_ID: ${{ vars.ASISTENTE_WORKLOAD_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          KV_NAME: ${{ vars.KV_NAME }}
+          DB_HOST: ${{ vars.DB_HOST }}
+          DB_USER: ${{ vars.DB_USER }}
+          KAFKA_BOOTSTRAP_SERVERS: ${{ vars.KAFKA_BOOTSTRAP_SERVERS }}
+          INGRESS_HOST: ${{ vars.INGRESS_HOST }}
+          REDIS_HOST: ${{ vars.REDIS_HOST }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          # Provisional hasta calibrar con el embedding real (deferred-work.md).
+          ASISTENTE_RAG_THRESHOLD: ${{ vars.ASISTENTE_RAG_THRESHOLD || '0.55' }}
+          INGRESS_DNS_LABEL: unused
+          ACME_EMAIL: unused
+        run: |
+          # Los namespaces los crea una vez un administrador (ver docs/despliegue-azure.md).
+          IMAGE="${ACR_NAME}.azurecr.io/triage-service:${IMAGE_TAG}" \
+            scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/triage
+          IMAGE="${ACR_NAME}.azurecr.io/clinical-assistant-service:${IMAGE_TAG}" \
+            scripts/render-k8s.sh "$RUNNER_TEMP/k8s" k8s/asistente
+          rm "$RUNNER_TEMP/k8s/triage-namespace.yaml" "$RUNNER_TEMP/k8s/asistente-namespace.yaml"
+          for svc in triage asistente; do
+            for f in secretproviderclass serviceaccount configmap service ingress deployment; do
+              kubectl apply -f "$RUNNER_TEMP/k8s/$svc-$f.yaml"
+            done
+          done
+          kubectl -n triage rollout status deployment/triage --timeout=300s
+          kubectl -n asistente rollout status deployment/asistente --timeout=420s

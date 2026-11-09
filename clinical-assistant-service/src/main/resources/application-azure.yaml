@@ -1,0 +1,52 @@
+# Perfil con proveedor real (AKS). Los secretos llegan por variables de entorno desde Key Vault (CSI):
+# ASISTENTE_API_KEY, REDIS_PASSWORD, EVENTHUBS_CONNECTION_STRING. Nada de esto se versiona.
+# Azure OpenAI NO usa clave: con api-key vacio Spring AI usa DefaultAzureCredential (Workload Identity,
+# rol "Cognitive Services OpenAI User"); la cuenta tiene las claves locales desactivadas.
+spring:
+  ai:
+    model:
+      chat: azure-openai
+      embedding: azure-openai
+    azure:
+      openai:
+        api-key: ${AZURE_OPENAI_API_KEY:}
+        endpoint: ${AZURE_OPENAI_ENDPOINT}
+        chat:
+          options:
+            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT:gpt-5.4-mini}
+            # Modelos de razonamiento (gpt-5.x) usan max_completion_tokens, no max_tokens.
+            max-completion-tokens: ${assistant.rag.max-output-tokens}
+        embedding:
+          options:
+            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:text-embedding-3-small}
+  data:
+    redis:
+      # Azure Managed Redis: TLS en el puerto 10000 y autenticacion obligatoria (sin valores por defecto:
+      # si falta REDIS_HOST o REDIS_PASSWORD el arranque falla en lugar de conectar sin autenticar).
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:10000}
+      password: ${REDIS_PASSWORD}
+      ssl:
+        enabled: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    properties:
+      security.protocol: SASL_SSL
+      sasl.mechanism: PLAIN
+      # Event Hubs: usuario literal "$ConnectionString", contrasena = connection string (regla SAS Listen+Send).
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${EVENTHUBS_CONNECTION_STRING}";
+    producer:
+      properties:
+        max.block.ms: 15000
+        request.timeout.ms: 15000
+        delivery.timeout.ms: 30000
+
+assistant:
+  ai:
+    provider: azure
+  projection:
+    # Event Hubs no admite crear topics por la API Kafka: los crea Terraform.
+    create-topics: false
+  rag:
+    # Calibrado con text-embedding-3-small real (2026-11-08): consultas legítimas >= 0.618, irrelevantes <= 0.503 (0.55 deja margen); casos 0.58-0.59 los cubren el prompt y RespuestaSustentada.
+    similarity-threshold: 

@@ -1,3 +1,103 @@
 spring:
+  reactor:
+    # Propaga el contexto de observacion (traceId/MDC) a los hilos de Reactor (scheduler de embeddings incluido).
+    context-propagation: auto
   application:
     name: clinical-assistant-service
+  profiles:
+    # Sin perfil explicito se usa `dev` (dobles locales, sin credenciales). En despliegue activar `azure`.
+    default: dev
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      ssl:
+        enabled: ${REDIS_SSL:false}
+      timeout: 2s
+      connect-timeout: 2s
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    admin:
+      operation-timeout: 5s
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        max.poll.records: 100
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 15000
+    listener:
+      # Con listener que devuelve Mono el offset se confirma al completar el Mono (despues de Redis).
+      ack-mode: manual
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint.health.group:
+    # Readiness: Kafka y Redis (la vista de urgencias depende de ambos); NO depende del proveedor LLM.
+    readiness:
+      include: readinessState,redis,kafka
+
+assistant:
+  projection:
+    enabled: ${ASISTENTE_PROJECTION_ENABLED:true}
+    topic: triaje.eventos
+    dlt-topic: triaje.eventos.dlt
+    group-id: ${ASISTENTE_KAFKA_GROUP_ID:clinical-assistant-urgencias}
+    max-attempts: 5
+    retry-backoff: 200ms
+    retry-max-backoff: 5s
+  security:
+    # Clave propia del Asistente (NO compartida con Triage). Solo por entorno; sin valor por defecto.
+    api-key: ${ASISTENTE_API_KEY:}
+  rag:
+    corpus-version: v1
+    corpus-location: classpath:corpus/{version}/*.md
+    top-k: 3
+    # Calibrado con las 3 consultas del baseline para el doble de desarrollo; recalibrar con text-embedding-3-small.
+    similarity-threshold: 0.30
+    max-output-tokens: 400
+    max-answer-chars: 2000
+    llm-timeout: 30s
+    embedding-timeout: 10s
+    scheduler:
+      threads: 4
+      queue-capacity: 100
+  # Resiliencia del proveedor LLM (Story 4.3). Timeouts por llamada: assistant.rag.llm-timeout / embedding-timeout.
+  # Circuito abierto o bulkhead saturado => rechazo inmediato (HTTP 503), sin colas.
+  llm:
+    circuit-breaker:
+      failure-rate-threshold: ${ASISTENTE_LLM_CB_FAILURE_RATE:50}
+      sliding-window-size: ${ASISTENTE_LLM_CB_WINDOW:10}
+      minimum-number-of-calls: ${ASISTENTE_LLM_CB_MIN_CALLS:5}
+      wait-duration-in-open-state: ${ASISTENTE_LLM_CB_WAIT_OPEN:30s}
+      permitted-calls-in-half-open-state: 3
+    bulkhead:
+      chat-max-concurrent-calls: ${ASISTENTE_LLM_BULKHEAD_CHAT:8}
+      embedding-max-concurrent-calls: ${ASISTENTE_LLM_BULKHEAD_EMBEDDINGS:8}
+      max-wait: 0ms

@@ -1,0 +1,17 @@
+# Solo valores NO secretos. Los secretos llegan desde Key Vault (secretproviderclass.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: triage-config
+  namespace: triage
+data:
+  SPRING_PROFILES_ACTIVE: "azure"
+  DB_HOST: "${DB_HOST}"
+  DB_PORT: "5432"
+  DB_NAME: "triage"
+  DB_USER: "${DB_USER}"
+  KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS}"
+  # SLA: se dejan los valores por defecto de application.yaml. No se sobreescriben por variable de
+  # entorno porque el binding de TRIAGE_SLA_MINUTES_URGENTE_2 (guion bajo en la clave del Map) no
+  # está verificado (deferred-work.md, Story 1.5).
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"

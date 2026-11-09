@@ -1,0 +1,64 @@
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates the next story after the previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; the status view surfaces open ones
+generated: 11-07-2026 22:33
+last_updated: 2026-11-08
+project: PruebaTecnicaCeiba
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+development_status:
+  epic-1: done
+  1-1-registrar-y-clasificar-un-paciente: done
+  1-2-consultar-un-paciente: done
+  1-3-cambiar-el-estado-con-transiciones-válidas: done
+  1-4-publicar-eventos-de-triaje-de-forma-durable: done
+  1-5-escalar-por-sla-una-sola-vez: done
+  1-6-exponer-triage-en-azure: done
+  epic-1-retrospective: optional
+
+  epic-2: done
+  2-1-consultar-el-reporte-de-operación-por-hora: done
+  epic-2-retrospective: optional
+
+  epic-3: done
+  3-1-persistir-y-consultar-alertas-de-escalamiento: done
+  3-2-recibir-alertas-en-vivo-por-sse-con-recuperación: done
+  3-3-consultar-la-carga-activa-de-urgencias-por-nivel: done
+  3-4-exponer-el-asistente-clínico-en-azure: done
+  epic-3-retrospective: optional
+
+  epic-4: done
+  4-1-responder-consultas-citando-el-protocolo-del-corpus: done
+  4-2-abstenerse-cuando-no-existe-protocolo: done
+  4-3-responder-con-claridad-cuando-el-proveedor-llm-falla: done
+  4-4-entregar-la-solución-integrada-y-documentada: done
+  4-5-puerta-e2e-con-curl-bdd-y-mbt: done
+  epic-4-retrospective: optional

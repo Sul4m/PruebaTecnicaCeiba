@@ -17,16 +17,40 @@ repositories {
 	mavenCentral()
 }
 
+ext {
+	// Spring AI 1.0.x (GA line compatible with Spring Boot 3.4/3.5). See ADR-0003.
+	springAiVersion = '1.0.9'
+	resilience4jVersion = '2.2.0'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+	}
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	// Correlacion: traceId en cada log ECS (mismo patron que Triage).
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis-reactive'
 	implementation 'org.springframework.kafka:spring-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
+	// Spring AI: Azure OpenAI chat/embeddings (activated only with the `azure` profile) + SimpleVectorStore.
+	implementation 'org.springframework.ai:spring-ai-starter-model-azure-openai'
+	implementation 'org.springframework.ai:spring-ai-vector-store'
+	// Resiliencia del proveedor LLM (Story 4.3): circuit breaker + bulkhead sobre Reactor.
+	implementation "io.github.resilience4j:resilience4j-reactor:${resilience4jVersion}"
+	implementation "io.github.resilience4j:resilience4j-circuitbreaker:${resilience4jVersion}"
+	implementation "io.github.resilience4j:resilience4j-bulkhead:${resilience4jVersion}"
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+	testImplementation 'io.projectreactor:reactor-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:kafka'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

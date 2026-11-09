@@ -1,3 +1,72 @@
 spring:
   application:
     name: triage-service
+  reactor:
+    context-propagation: auto
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  r2dbc:
+    url: r2dbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    admin:
+      operation-timeout: 5s
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 15000
+  flyway:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:triage}
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
+
+triage:
+  security:
+    api-key: ${TRIAGE_API_KEY}
+  outbox:
+    enabled: true
+    interval: 1s
+    batch-size: 100
+    max-attempts: 5
+    max-backoff: 30s
+  escalation:
+    enabled: true
+    interval: 30s
+    batch-size: 100
+  sla:
+    minutes:
+      CRITICO: 5
+      URGENTE: 10
+      URGENTE_2: 30
+      NO_URGENTE: 60
+      NO_URGENTE_2: 120
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,r2dbc
+  tracing:
+    sampling:
+      probability: 1.0
+
+logging:
+  structured:
+    format:
+      console: ecs

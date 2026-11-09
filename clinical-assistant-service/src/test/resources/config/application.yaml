@@ -1,0 +1,4 @@
+# Pruebas ordinarias: sin Kafka ni Redis ni Docker. Las pruebas *ContainersIT activan la proyeccion explicitamente.
+assistant:
+  projection:
+    enabled: false
