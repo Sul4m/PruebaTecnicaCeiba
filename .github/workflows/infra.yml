@@ -34,6 +34,7 @@ env:
   TF_VAR_admin_object_id: ${{ vars.ADMIN_OBJECT_ID }}
   TF_VAR_tfstate_storage_account_id: ${{ vars.TFSTATE_STORAGE_ACCOUNT_ID }}
   TF_VAR_github_repository: ${{ github.repository }}
+  TF_VAR_github_subject_prefix: repo:${{ github.repository_owner }}@${{ github.repository_owner_id }}/${{ github.event.repository.name }}@${{ github.repository_id }}
   TF_IN_AUTOMATION: "true"
   TFSTATE_RG: ${{ vars.TFSTATE_RG }}
   TFSTATE_SA: ${{ vars.TFSTATE_STORAGE_ACCOUNT }}
