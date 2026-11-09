@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -181,7 +182,7 @@ class AlertStreamIntegrationTest extends PostgresTestSupport {
         double gauge0 = registry.get(METRIC).gauge().value();
         Flux<String> a = alertsOnly(open(null)).map(ServerSentEvent::id).take(1);
         Flux<String> b = alertsOnly(open(null)).map(ServerSentEvent::id).take(1);
-        List<String> got = new ArrayList<>();
+        List<String> got = new CopyOnWriteArrayList<>(); // dos suscriptores escriben desde hilos distintos
         Disposable da = a.subscribe(got::add);
         Disposable db2 = b.subscribe(got::add);
         try {
