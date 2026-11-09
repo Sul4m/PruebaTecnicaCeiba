@@ -45,6 +45,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   web_app_routing {
     dns_zone_ids = []
   }
+
+  lifecycle {
+    # Azure rellena upgrade_settings con sus valores por defecto; sin esto cada plan propone quitarlos.
+    ignore_changes = [default_node_pool[0].upgrade_settings]
+  }
 }
 
 # El kubelet descarga imágenes de ACR.
