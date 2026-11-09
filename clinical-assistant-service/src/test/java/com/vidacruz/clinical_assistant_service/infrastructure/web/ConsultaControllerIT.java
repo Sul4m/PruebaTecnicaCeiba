@@ -64,10 +64,13 @@ class ConsultaControllerIT {
 
     @Test
     void hypertensiveCrisisQuestionCitesProto001() {
+        String grounded = "Reconfirmar la presión tras 5 minutos de reposo. No reducir la presión más de un 25% en la primera hora.";
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                new ChatResponse(List.of(new Generation(new AssistantMessage(grounded))))));
         post(KEY, Map.of("pregunta", "¿Cuáles son las medidas iniciales ante una crisis hipertensiva?"))
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.respuesta").isEqualTo("Respuesta simulada.")
+                .jsonPath("$.respuesta").isEqualTo(grounded)
                 .jsonPath("$.fuentes[0].protocolo").isEqualTo("PROTO-001")
                 .jsonPath("$.fuentes[0].seccion").isEqualTo("Medidas iniciales")
                 .jsonPath("$.fuentes[?(@.protocolo=='PROTO-999')]").isEmpty();
@@ -107,6 +110,9 @@ class ConsultaControllerIT {
 
     @Test
     void sepsisQuestionCitesProto002() {
+        String grounded = "Antibiótico de amplio espectro en la primera hora, tras lactato y hemocultivos.";
+        when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
+                new ChatResponse(List.of(new Generation(new AssistantMessage(grounded))))));
         post(KEY, Map.of("pregunta", "¿Cuándo se administra el primer antibiótico en sepsis?"))
                 .expectStatus().isOk()
                 .expectBody()
