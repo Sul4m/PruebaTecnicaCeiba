@@ -1,6 +1,6 @@
 # Instrucciones para Claude Code
 
-@AGENTS.md
+Las reglas de negocio y los requisitos normativos están en [`docs/requirements/technical-test-baseline.md`](docs/requirements/technical-test-baseline.md); consultarlo antes de cambiar clasificación, validación, SLA, auditoría o RAG.
 
 ## Proyecto y ejecución
 

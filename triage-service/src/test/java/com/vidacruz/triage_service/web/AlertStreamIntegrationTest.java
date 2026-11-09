@@ -11,7 +11,6 @@ import com.vidacruz.triage_service.application.EscalateOverduePatientsUseCase;
 import com.vidacruz.triage_service.application.EscalationMetricsPort;
 import com.vidacruz.triage_service.application.OutboxPort;
 import com.vidacruz.triage_service.application.PatientRepositoryPort;
-import com.vidacruz.triage_service.domain.TriageLevel;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
