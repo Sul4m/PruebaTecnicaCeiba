@@ -6,31 +6,127 @@ Backend reactivo para el triaje de urgencias de VidaCruz: dos microservicios Jav
 
 ## Estado
 
-- Local: Triage (registro, estados, SLA/escalamiento, auditoría, reporte, alertas SSE) y Asistente (RAG, abstención, resiliencia LLM, estado de urgencias) implementados; ejecución integrada con Docker Compose.
+- Local (ver [Ejecución local](#ejecución-local-con-docker-un-solo-comando) y [Postman](#probar-con-postman)): Triage (registro, estados, SLA/escalamiento, auditoría, reporte, alertas SSE) y Asistente (RAG, abstención, resiliencia LLM, estado de urgencias) implementados; ejecución integrada con Docker Compose.
 - Azure (AKS, Terraform, CI/CD, Key Vault, Event Hubs, PostgreSQL, Redis, Azure OpenAI): **Triage y Asistente desplegados y verificados** ([guía](docs/despliegue-azure.md)). Ver [URLs de Azure](#urls-de-azure).
 
-## Ejecución local (un solo comando)
+## Contenido
 
-Requisitos: Docker con Compose. (JDK 17 solo si se ejecutan los servicios o las pruebas fuera de Docker.)
+[Ejecución local con Docker](#ejecución-local-con-docker-un-solo-comando) · [Ejecución sin Docker (bootRun)](#ejecución-de-los-servicios-sin-docker-bootrun) · [Postman](#probar-con-postman) · [Ejemplos curl](#ejemplos-de-uso) · [Pruebas](#pruebas) · [Puerta E2E](#puerta-e2e-curl--bdd--mbt) · [Problemas frecuentes](#problemas-frecuentes) · [Azure](#urls-de-azure) · [Referencia de la API](#referencia-de-la-api-azure) · [CI/CD y despliegue](#cicd-y-despliegue-en-azure) · [Estructura](#estructura)
+
+## Ejecución local con Docker (un solo comando)
+
+**Requisitos:** Docker con Compose v2 (`docker compose version`) y los puertos `8080`, `8081` y `9094` libres. No hace falta JDK ni Gradle: las imágenes se construyen dentro de Docker.
 
 ```bash
-cp .env.example .env     # editar y definir los valores requeridos
-docker compose up --build
+git clone https://github.com/Sul4m/PruebaTecnicaCeiba.git && cd PruebaTecnicaCeiba
+cp .env.example .env     # editar y definir los valores requeridos (ver tabla)
+docker compose up --build -d
+docker compose ps        # esperar a que todos estén "healthy" / "running"
 ```
 
-Variables que `docker-compose.yml` exige (sin ellas `compose` falla con un mensaje explícito):
+La primera construcción tarda varios minutos (descarga Gradle y dependencias); las siguientes usan caché.
 
-| Variable | Uso |
+### Variables de `.env`
+
+`docker-compose.yml` exige estas variables (sin ellas `compose` falla con un mensaje explícito). `.env` está ignorado por Git.
+
+| Variable | Obligatoria | Uso |
+|---|---|---|
+| `DB_USER`, `DB_PASSWORD` | Sí | Credenciales de PostgreSQL (las usa también Triage) |
+| `DB_NAME` | No (defecto `triage`) | Nombre de la base de datos |
+| `TRIAGE_API_KEY` | Sí | API key de Triage (cabecera `X-API-Key`) |
+| `ASISTENTE_API_KEY` | Sí | API key propia del Asistente, distinta de la de Triage; sin ella el servicio no arranca |
+
+Ejemplo de `.env` para pruebas locales (no usar estos valores fuera de tu máquina):
+
+```
+DB_NAME=triage
+DB_USER=triage
+DB_PASSWORD=cambia-esto
+TRIAGE_API_KEY=clave-triage-local
+ASISTENTE_API_KEY=clave-asistente-local
+```
+
+### Qué se levanta
+
+| Contenedor | Imagen | Puerto en el host |
+|---|---|---|
+| `postgres` | PostgreSQL 16 (volumen `triage-pgdata`) | no publicado |
+| `kafka` | Apache Kafka 3.9 (KRaft, un nodo) | `127.0.0.1:9094` |
+| `redis` | Redis 7.4 (volumen `assistant-redisdata`) | no publicado |
+| `triage` | construida de `./triage-service` | `8080` |
+| `clinical-assistant` | construida de `./clinical-assistant-service` | `8081` |
+
+Triage espera a PostgreSQL y a Kafka saludables; el Asistente, a Kafka y Redis. Flyway crea el esquema de Triage al arrancar.
+
+### Comandos útiles
+
+```bash
+docker compose logs -f triage clinical-assistant   # logs en vivo (JSON ECS con traceId)
+docker compose ps                                  # estado y salud
+docker compose restart clinical-assistant          # reiniciar un servicio
+docker compose up --build -d triage                # reconstruir solo uno tras cambiar código
+docker compose down                                # parar (conserva los datos)
+docker compose down -v                             # parar y borrar los datos (PostgreSQL y Redis)
+```
+
+### Verificar que funciona
+
+```bash
+curl -s localhost:8080/actuator/health/readiness   # {"status":"UP"} (sin API key)
+curl -s localhost:8081/actuator/health/readiness   # {"status":"UP"}
+set -a; . ./.env; set +a
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/triage/alertas                                # 401 sin clave
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/triage/alertas -H "X-API-Key: $TRIAGE_API_KEY" # 200
+```
+
+La readiness de Triage incluye PostgreSQL; la del Asistente incluye Kafka y Redis, nunca el proveedor LLM.
+
+### Proveedor LLM en local
+
+Sin perfil explícito el Asistente usa el perfil `dev`: dobles locales de embeddings y chat, sin credenciales ni llamadas a Azure. Sirven para ejecutar las tres consultas del baseline y las pruebas, **no** son el modelo real (la calidad de `gpt-5.4-mini` solo se comprueba contra Azure). El perfil `azure` (`SPRING_PROFILES_ACTIVE=azure`) usa Azure OpenAI y requiere `AZURE_OPENAI_ENDPOINT` (autenticación por Entra ID/Workload Identity en AKS; `AZURE_OPENAI_API_KEY` solo si se usa clave) y, opcionalmente, `AZURE_OPENAI_CHAT_DEPLOYMENT` (defecto `gpt-5.4-mini`) y `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (defecto `text-embedding-3-small`). El Compose no las pasa al contenedor: el perfil `azure` se activa en el despliegue en AKS.
+
+### Ejecución de los servicios sin Docker (bootRun)
+
+Útil para depurar. Requiere **JDK 17 o superior**. PostgreSQL y Redis no se publican al host en el Compose, así que se levantan aparte; Kafka sí queda en `localhost:9094`, que es el valor por defecto de los servicios.
+
+```bash
+# Dependencias (una sola vez por terminal)
+docker compose up -d kafka
+docker run -d --name pg-local -p 5432:5432 -e POSTGRES_USER=triage -e POSTGRES_PASSWORD=triage -e POSTGRES_DB=triage postgres:16
+docker run -d --name redis-local -p 6379:6379 redis:7.4
+
+# Triage (terminal 1) — puerto 8080
+cd triage-service
+DB_USER=triage DB_PASSWORD=triage TRIAGE_API_KEY=clave-triage-local ./gradlew bootRun
+
+# Asistente (terminal 2) — puerto 8081, perfil dev por defecto
+cd clinical-assistant-service
+ASISTENTE_API_KEY=clave-asistente-local ./gradlew bootRun --args='--server.port=8081'
+```
+
+Variables opcionales de Triage: `DB_HOST`, `DB_PORT`, `DB_NAME`, `KAFKA_BOOTSTRAP_SERVERS`. Del Asistente: `KAFKA_BOOTSTRAP_SERVERS`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_SSL`, `ASISTENTE_KAFKA_GROUP_ID` y los ajustes de resiliencia `ASISTENTE_LLM_*`. Para limpiar: `docker rm -f pg-local redis-local`.
+
+## Probar con Postman
+
+Hay una colección con 9 carpetas (seguridad, registro y clasificación E1-E6, validaciones, estados, Asistente RAG, flujo integrado Triage → Kafka → Asistente → Redis, escalamiento/alertas, reporte y limpieza) y dos entornos listos, en [`docs/postman/`](docs/postman):
+
+| Archivo | Contenido |
 |---|---|
-| `DB_USER`, `DB_PASSWORD` | Credenciales de PostgreSQL (y de Triage). `DB_NAME` opcional, defecto `triage` |
-| `TRIAGE_API_KEY` | API key de Triage (cabecera `X-API-Key`) |
-| `ASISTENTE_API_KEY` | API key propia del Asistente; sin ella el servicio no arranca |
+| `vidacruz.postman_collection.json` | La colección, con tests automáticos en cada petición |
+| `local.postman_environment.json` | `triageUrl=http://localhost:8080`, `asistenteUrl=http://localhost:8081` |
+| `azure.postman_environment.json` | Ambas URLs apuntan a `https://ptc-a01-api.eastus2.cloudapp.azure.com` |
 
-Se levantan: PostgreSQL 16, Kafka 3.9 (KRaft), Redis 7.4, Triage (`:8080`) y Asistente (`:8081`). Kafka queda accesible desde el host solo en `127.0.0.1:9094`.
+Pasos:
 
-**Proveedor LLM en local.** Sin perfil explícito el Asistente usa el perfil `dev`: dobles locales de embeddings y chat, sin credenciales ni llamadas a Azure. Sirven para ejecutar las tres consultas del baseline y las pruebas, **no** son el modelo real. El perfil `azure` (`SPRING_PROFILES_ACTIVE=azure`) usa Azure OpenAI y requiere `AZURE_OPENAI_ENDPOINT` (autenticación por Entra ID/Workload Identity en AKS; `AZURE_OPENAI_API_KEY` solo si se usa clave) y, opcionalmente, `AZURE_OPENAI_CHAT_DEPLOYMENT` (defecto `gpt-5.4-mini`) y `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` (defecto `text-embedding-3-small`). El Compose actual no las pasa al contenedor; el perfil `azure` se activa en el despliegue en AKS.
+1. En Postman: **Import** → seleccionar los tres archivos (no abrir la carpeta como *workspace*: Postman generaría decenas de archivos).
+2. Elegir el entorno (`local` o `azure`) arriba a la derecha.
+3. En el entorno, completar `triageApiKey` y `asistenteApiKey` (el valor *Current value*; son campos secretos y no se guardan en el repo):
+   - local: los valores de tu `.env` (`TRIAGE_API_KEY`, `ASISTENTE_API_KEY`);
+   - Azure: `az keyvault secret show --vault-name kv-ptc-a01 --name triage-api-key --query value -o tsv` (y `asistente-api-key`).
+4. Ejecutar las carpetas **en orden** (menú de la colección → *Run*): algunas guardan el `id` del paciente creado para las siguientes. La carpeta 6 espera el SLA real, por lo que tarda más; la 9 cierra (da de alta) los pacientes de prueba.
 
-Salud: `GET /actuator/health/readiness` (sin API key) en `:8080` y `:8081`. La readiness de Triage incluye PostgreSQL; la del Asistente incluye Kafka y Redis, nunca el proveedor LLM.
+`claveIncorrecta` es una variable fija usada por las pruebas de 401. En local con SLA reales, `CRITICO` escala a los 5 minutos; el Compose de la puerta E2E (más abajo) lo baja a 1 minuto para pruebas automáticas.
 
 ## Arquitectura
 
@@ -120,7 +216,7 @@ La entrega es al menos una vez (el cliente deduplica por `alertId`). SSE no cubr
 
 ## Pruebas
 
-Requieren Docker en marcha (Testcontainers para PostgreSQL, Kafka y Redis). No usan un proveedor LLM real (dobles/mocks).
+Requieren JDK 17+ y Docker en marcha (Testcontainers para PostgreSQL, Kafka y Redis). No usan un proveedor LLM real (dobles/mocks).
 
 ```bash
 cd triage-service && ./gradlew test
@@ -128,6 +224,18 @@ cd clinical-assistant-service && ./gradlew test
 ```
 
 Cubren clasificación E1-E6, transiciones válidas e inválidas, escalamiento idempotente, outbox, alertas/SSE, reporte, proyección Redis, citas RAG, abstención y fallos del LLM. No hay comando de lint documentado.
+
+## Puerta E2E (curl + BDD + MBT)
+
+Pruebas de extremo a extremo contra un `docker compose` real, solo con `bash`, `curl` y `jq`:
+
+```bash
+e2e/run.sh                   # levanta el stack, corre BDD + MBT + caso LLM caído y lo baja (down -v)
+e2e/run.sh --keep            # no baja el stack al terminar
+e2e/run.sh --only "S01 S02"  # solo esos escenarios
+```
+
+No toca tu `.env` (genera uno sintético en `e2e/.generated/`) y usa SLA y escalamiento acelerados. Duración típica: 6-8 minutos. Detalle en [`e2e/README.md`](e2e/README.md).
 
 ## Ejemplos de uso
 
@@ -225,13 +333,102 @@ curl -s -X POST $H/triage/pacientes -H "X-API-Key: $TK" -H 'Content-Type: applic
   -d '{"nombreCompleto":"Ana Perez","edad":54,"quejaPrincipal":"Dolor torácico","signosVitales":{"frecuenciaCardiaca":130,"presionSistolica":180,"presionDiastolica":110,"spo2":97,"temperatura":36.8,"dolor":8,"gcs":15}}'
 ```
 
+## Referencia de la API (Azure)
+
+Base: `https://ptc-a01-api.eastus2.cloudapp.azure.com`. Todos los endpoints exigen `X-API-Key` (la de su servicio) y devuelven `application/json`, salvo el stream SSE. Los endpoints de Actuator no se publican por el ingress.
+
+### Triage — `/triage` (clave `triage-api-key`)
+
+| Método | Ruta | Descripción | Respuestas |
+|---|---|---|---|
+| `POST` | `/triage/pacientes` | Registra y clasifica (E1-E6). Cuerpo: `nombreCompleto`, `edad`, `quejaPrincipal`, `signosVitales{frecuenciaCardiaca, presionSistolica, presionDiastolica, spo2, temperatura, dolor, gcs}` | `201` con `id`, `nivel`, `slaMinutos`, `estado`, `fechaRegistro`; `400` si un campo es inválido |
+| `GET` | `/triage/pacientes/{id}` | Detalle del paciente | `200`; `404` si no existe |
+| `PATCH` | `/triage/pacientes/{id}/estado` | Cambia el estado. Cuerpo: `{"estado":"EN_CONSULTA"}` | `200`; `409` si la transición no es válida; `404` |
+| `GET` | `/triage/reportes/operacion?desde=&hasta=` | Operación por hora (ISO 8601, ambos obligatorios) | `200`; `400` si falta un parámetro o es inválido |
+| `GET` | `/triage/alertas?despuesDe=0&limite=50` | Alertas de escalamiento paginadas (RF-06) | `200`; `400` si no es entero |
+| `GET` | `/triage/alertas/stream` | Stream SSE de alertas; heartbeat cada 15 s; reanuda con `Last-Event-ID` | `200` `text/event-stream` |
+
+Transiciones válidas: `REGISTRADO → EN_CONSULTA`, `REGISTRADO → ALTA`, `EN_CONSULTA → ALTA`. Cualquier otra responde `409`.
+
+### Asistente Clínico — `/asistente` (clave `asistente-api-key`)
+
+| Método | Ruta | Descripción | Respuestas |
+|---|---|---|---|
+| `POST` | `/asistente/consulta` | Consulta RAG sobre los protocolos. Cuerpo: `{"pregunta":"..."}`. Responde `respuesta` y `fuentes[{protocolo, seccion}]`; sin protocolo aplicable devuelve solo el aviso con `fuentes: []` | `200`; `400` si la pregunta está vacía o excede el máximo; `503` si el LLM no responde |
+| `GET` | `/asistente/estado-urgencias` | Pacientes activos por nivel (proyección en Redis) | `200`; `503` si la proyección no está disponible |
+
+### Errores
+
+- Sin `X-API-Key` o con clave incorrecta: `401` con cuerpo vacío.
+- Validación (`400`) y conflicto (`409`): `application/problem+json` (RFC 9457); el `400` nombra el campo inválido en `campo`.
+- Proveedor del LLM/embeddings caído, circuito abierto o Redis no disponible: `503` (`problem+json`) en el Asistente, sin 500 ni datos inventados.
+
+### Prueba rápida contra Azure
+
+```bash
+H=https://ptc-a01-api.eastus2.cloudapp.azure.com
+TK=$(az keyvault secret show --vault-name kv-ptc-a01 --name triage-api-key --query value -o tsv)
+AK=$(az keyvault secret show --vault-name kv-ptc-a01 --name asistente-api-key --query value -o tsv)
+
+# 1. Registrar (devuelve el id)
+curl -s -X POST $H/triage/pacientes -H "X-API-Key: $TK" -H 'Content-Type: application/json' \
+  -d '{"nombreCompleto":"Ana Perez","edad":54,"quejaPrincipal":"Dolor torácico","signosVitales":{"frecuenciaCardiaca":130,"presionSistolica":180,"presionDiastolica":110,"spo2":97,"temperatura":36.8,"dolor":8,"gcs":15}}'
+ID=<id devuelto>
+
+# 2. Consultar, cambiar estado y dar de alta
+curl -s $H/triage/pacientes/$ID -H "X-API-Key: $TK"
+curl -s -X PATCH $H/triage/pacientes/$ID/estado -H "X-API-Key: $TK" -H 'Content-Type: application/json' -d '{"estado":"EN_CONSULTA"}'
+curl -s -X PATCH $H/triage/pacientes/$ID/estado -H "X-API-Key: $TK" -H 'Content-Type: application/json' -d '{"estado":"ALTA"}'
+
+# 3. Reporte, alertas y stream
+curl -s "$H/triage/reportes/operacion?desde=2026-11-08T00:00:00Z&hasta=2026-11-09T00:00:00Z" -H "X-API-Key: $TK"
+curl -s "$H/triage/alertas?despuesDe=0&limite=50" -H "X-API-Key: $TK"
+curl -N $H/triage/alertas/stream -H "X-API-Key: $TK" -H 'Accept: text/event-stream'
+
+# 4. Asistente: consulta con fuente, abstención y proyección
+curl -s -X POST $H/asistente/consulta -H "X-API-Key: $AK" -H 'Content-Type: application/json' \
+  -d '{"pregunta":"¿Qué antibiótico se administra en sepsis?"}'
+curl -s -X POST $H/asistente/consulta -H "X-API-Key: $AK" -H 'Content-Type: application/json' \
+  -d '{"pregunta":"¿Cuál es el tratamiento de primera línea para la diabetes tipo 2?"}'
+curl -s $H/asistente/estado-urgencias -H "X-API-Key: $AK"
+```
+
+## Problemas frecuentes
+
+| Síntoma | Causa y solución |
+|---|---|
+| `docker compose up` falla con "define TRIAGE_API_KEY en .env" | Falta `.env` o alguna variable obligatoria: `cp .env.example .env` y completarla |
+| `port is already allocated` (8080/8081/9094) | Otro proceso usa el puerto; pararlo o cambiar el mapeo `ports:` del Compose |
+| El Asistente no arranca y pide `ASISTENTE_API_KEY` | La clave es obligatoria y debe ser distinta de la de Triage |
+| 401 en todas las peticiones | Falta la cabecera `X-API-Key` o se usó la clave del otro servicio |
+| `estado-urgencias` devuelve 503 | Redis aún no está listo o fue reiniciado: esperar la readiness y revisar `docker compose logs clinical-assistant` |
+| El conteo de `estado-urgencias` no sube tras registrar | El evento viaja por Kafka (normalmente <4 s): reintentar; si persiste, revisar `docker compose logs kafka triage` |
+| Tras cambiar credenciales de BD falla el login a PostgreSQL | El volumen conserva las credenciales antiguas: `docker compose down -v` |
+| Las pruebas Gradle fallan al iniciar contenedores | Testcontainers necesita Docker en marcha y accesible |
+| Postman descarga/crea muchos archivos | Se abrió la carpeta como *workspace*; usar **Import** con los tres JSON |
+
+## CI/CD y despliegue en Azure
+
+- **Flujo de ramas:** `feature/fix → develop` (PR) y `develop → master` (PR). Commits con Conventional Commits.
+- **`.github/workflows/triage.yml` (`deploy`):** en cada PR valida los manifests de Kubernetes, `terraform fmt/validate` y corre los tests de ambos servicios; al hacer push a `master` construye y publica las dos imágenes en ACR (tag inmutable = SHA del commit) y aplica los manifests en AKS. Se autentica por OIDC, sin credenciales en el repo.
+- **`.github/workflows/infra.yml` (`infra`):** `terraform plan` (identidad de solo lectura) en PR y `apply` (identidad con escritura, con aprobación en el *environment* `azure-infra`) en push a `master`, solo cuando cambia `infra/`.
+- **Infraestructura (Terraform, `infra/terraform/`):** AKS (2 nodos), ACR, Key Vault, PostgreSQL privado, Event Hubs (`triaje.eventos` y su DLT), Azure Managed Redis, Azure OpenAI (`gpt-5.4-mini` y `text-embedding-3-small`, solo Entra ID) e identidades por servicio (Workload Identity). Manifests en `k8s/`.
+- **Despliegue desde cero:** pasos completos (estado remoto, `terraform apply`, secretos, cert-manager, ingress) en [`docs/despliegue-azure.md`](docs/despliegue-azure.md).
+- **Costos:** el entorno ronda 300-350 USD/mes (~10-12 USD/día, estimación). Para eliminarlo al terminar: `cp scripts/destroy-azure.sh.example scripts/destroy-azure.sh && scripts/destroy-azure.sh <sufijo>` (pide confirmar el nombre exacto del grupo de recursos).
+
 ## Estructura
 
 ```
 triage-service/             Servicio Triage (Gradle propio, Dockerfile)
 clinical-assistant-service/ Asistente Clínico (Gradle propio, Dockerfile)
 docker-compose.yml          PostgreSQL, Kafka, Redis y ambos servicios
+e2e/                        Puerta E2E (curl + BDD + MBT)
+infra/terraform/            Infraestructura de Azure
+k8s/                        Manifests de Kubernetes (Triage, Asistente, plataforma)
+scripts/                    Bootstrap de estado/secretos de Terraform, render de manifests, destroy
+.github/workflows/          Pipelines deploy (triage.yml) e infra (infra.yml)
 docs/adr/                   Decisiones de arquitectura
+docs/postman/               Colección y entornos de Postman
 docs/                       Contratos y runbooks
 docs/requirements/          Baseline del enunciado
 ```
