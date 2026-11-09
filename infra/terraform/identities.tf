@@ -112,6 +112,16 @@ resource "azurerm_role_assignment" "ci_deploy_aks_writer" {
   principal_id         = azurerm_user_assigned_identity.ci_deploy[0].principal_id
 }
 
+# "AKS RBAC Writer" no cubre CRDs de otros grupos: sin esto kubectl apply del SecretProviderClass (CSI de Key Vault)
+# da Forbidden, y Azure no expone data actions para secrets-store.csi.x-k8s.io (no se puede hacer un rol a medida).
+# RBAC Admin acotado a los dos namespaces de las apps (no al clúster).
+resource "azurerm_role_assignment" "ci_deploy_ns_admin" {
+  for_each             = local.ci_enabled ? toset(["triage", "asistente"]) : toset([])
+  scope                = "${azurerm_kubernetes_cluster.main.id}/namespaces/${each.key}"
+  role_definition_name = "Azure Kubernetes Service RBAC Admin"
+  principal_id         = azurerm_user_assigned_identity.ci_deploy[0].principal_id
+}
+
 # ---------- Terraform: APPLY (escritura, solo environment azure-infra) ----------
 
 resource "azurerm_user_assigned_identity" "ci_terraform_apply" {
