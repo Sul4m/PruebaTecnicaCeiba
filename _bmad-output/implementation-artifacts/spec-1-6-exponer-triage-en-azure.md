@@ -2,7 +2,7 @@
 title: 'Story 1.6: Exponer Triage en Azure'
 type: 'feature'
 created: '2026-11-08'
-status: 'review'
+status: 'done'
 route: 'dispatch'
 context:
   - '{project-root}/docs/adr/0004-aks-terraform-y-despliegue.md'

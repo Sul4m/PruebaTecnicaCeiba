@@ -2,7 +2,7 @@
 title: 'Story 4.3 - Responder con claridad cuando el proveedor LLM falla'
 type: 'feature'
 created: '2026-11-08'
-status: 'review'
+status: 'done'
 context:
   - '_bmad-output/implementation-artifacts/spec-4-1-responder-consultas-citando-el-protocolo-del-corpus.md'
   - '_bmad-output/implementation-artifacts/spec-4-2-abstenerse-cuando-no-existe-protocolo.md'
